@@ -37,7 +37,8 @@ function App() {
           <Route path="/" element={<RequireAuth><AppLayout /></RequireAuth>}>
             <Route index element={<Dashboard />} />
             <Route path="records" element={<RecordList />} />
-            <Route path="records/new" element={<DataEntry />} />
+            <Route path="records/entry" element={<DataEntry />} />
+            <Route path="records/:id" element={<DataEntry />} />
             <Route path="trends" element={<TrendAnalysis />} />
             <Route path="alerts" element={<AlertManagement />} />
             <Route path="points" element={<PointManagement />} />

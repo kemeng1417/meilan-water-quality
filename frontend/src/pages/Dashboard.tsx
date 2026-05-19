@@ -161,7 +161,7 @@ export default function Dashboard() {
                       </Typography.Text>
                     </div>
                     {item.status !== 'none' && (
-                      <div style={{ cursor: 'pointer' }} onClick={() => navigate(`/records/new?id=${item.record_id}`)}>
+                      <div style={{ cursor: 'pointer' }} onClick={() => navigate(`/records/${item.record_id}`)}>
                         <Progress
                           percent={item.fill_rate}
                           size="small"
@@ -171,7 +171,7 @@ export default function Dashboard() {
                     )}
                     {item.status === 'none' && (
                       <Button type="dashed" size="small" block icon={<EditOutlined />}
-                        onClick={() => navigate('/records/new')} style={{ borderRadius: 6 }}>
+                        onClick={() => navigate('/records/entry')} style={{ borderRadius: 6 }}>
                         新建
                       </Button>
                     )}
@@ -254,7 +254,7 @@ export default function Dashboard() {
                 : <span style={{ color: '#52c41a', fontSize: 12 }}>✓</span>,
             },
           ]}
-          onRow={r => ({ onClick: () => navigate(`/records/new?id=${r.id}`), style: { cursor: 'pointer' } })}
+          onRow={r => ({ onClick: () => navigate(`/records/${r.id}`), style: { cursor: 'pointer' } })}
         />
       </Card>
     </div>

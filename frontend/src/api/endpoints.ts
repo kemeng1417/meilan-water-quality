@@ -40,6 +40,9 @@ export const updateRecord = (id: number, data: Record<string, unknown>) =>
 
 export const deleteRecord = (id: number) => client.delete(`/records/${id}`);
 
+export const batchDeleteRecords = (ids: number[]) =>
+  client.post('/records/batch-delete', ids);
+
 export const reviewRecord = (id: number, reviewer: string, conclusion?: string) =>
   client.put(`/records/${id}/review`, null, { params: { reviewer, conclusion } });
 

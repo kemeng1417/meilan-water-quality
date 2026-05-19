@@ -21,7 +21,7 @@ const { Header, Sider, Content } = Layout;
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '首页看板' },
   { key: '/records', icon: <UnorderedListOutlined />, label: '检测记录' },
-  { key: '/records/new', icon: <FormOutlined />, label: '新建报告' },
+  { key: '/records/entry', icon: <FormOutlined />, label: '新建报告' },
   { key: '/trends', icon: <LineChartOutlined />, label: '趋势分析' },
   { key: '/alerts', icon: <AlertOutlined />, label: '异常管理' },
   { key: '/points', icon: <EnvironmentOutlined />, label: '采样点管理' },
@@ -40,8 +40,8 @@ export default function AppLayout() {
 
   const handleMenuClick = (key: string) => {
     // "新建报告"始终导航到无参数的空白页
-    if (key === '/records/new') {
-      navigate('/records/new');
+    if (key === '/records/entry') {
+      navigate('/records/entry');
     } else {
       navigate(key);
     }

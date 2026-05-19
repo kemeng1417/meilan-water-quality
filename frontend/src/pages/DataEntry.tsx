@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import {
   Card, Select, DatePicker, Input, Button, Table, message,
   Space, Typography, Tag, Descriptions, Popconfirm, Tooltip, Divider,
@@ -44,8 +44,9 @@ const LS_LAST_WT = 'water_last_water_type';
 const LS_LAST_POINTS = 'water_last_points';
 
 export default function DataEntry() {
+  const params = useParams();
   const [searchParams] = useSearchParams();
-  const recordId = searchParams.get('id');
+  const recordId = params.id || searchParams.get('id');
   const presetWt = searchParams.get('wt');
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -160,7 +161,7 @@ export default function DataEntry() {
       const pts = [...new Set(detRes.data.map((d: DetailRow) => d.sample_point_id))];
       if (pts.length > 0) setSinglePointId(Number(pts[0]));
       message.success(`报告 ${rec.record_no} 已创建`);
-      navigate(`/records/new?id=${rec.id}`, { replace: true });
+      navigate(`/records/${rec.id}`, { replace: true });
     } catch { message.error('创建失败'); }
     finally { setLoading(false); }
   };

@@ -32,6 +32,7 @@ def list_records(
     status: str | None = Query(None),
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
+    keyword: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -45,13 +46,41 @@ def list_records(
         q = q.filter(TestRecord.test_date >= start_date)
     if end_date:
         q = q.filter(TestRecord.test_date <= end_date)
+    if keyword:
+        q = q.filter(
+            (TestRecord.record_no.contains(keyword)) |
+            (TestRecord.tester.contains(keyword))
+        )
 
     total = q.count()
+
+    # Status counts (respecting current filters except status)
+    from sqlalchemy import func as sqlfunc
+    count_q = db.query(TestRecord)
+    if water_type_id:
+        count_q = count_q.filter(TestRecord.water_type_id == water_type_id)
+    if start_date:
+        count_q = count_q.filter(TestRecord.test_date >= start_date)
+    if end_date:
+        count_q = count_q.filter(TestRecord.test_date <= end_date)
+    if keyword:
+        count_q = count_q.filter(
+            (TestRecord.record_no.contains(keyword)) |
+            (TestRecord.tester.contains(keyword))
+        )
+    status_counts = {}
+    for s in ['draft', 'submitted', 'reviewed', 'rejected']:
+        status_counts[s] = count_q.filter(TestRecord.status == s).count()
+
     records = q.order_by(TestRecord.test_date.desc(), TestRecord.created_at.desc()).offset(
         (page - 1) * page_size
     ).limit(page_size).all()
 
-    return {"total": total, "page": page, "page_size": page_size, "items": records}
+    return {
+        "total": total, "page": page, "page_size": page_size,
+        "status_counts": status_counts,
+        "items": records,
+    }
 
 
 @router.post("", response_model=TestRecordOut)
@@ -283,6 +312,20 @@ def delete_record(record_id: int, db: Session = Depends(get_db)):
     db.delete(record)
     db.commit()
     return {"success": True}
+
+
+@router.post("/batch-delete")
+def batch_delete_records(ids: list[int], db: Session = Depends(get_db)):
+    """批量删除草稿/已打回状态的记录"""
+    records = db.query(TestRecord).filter(TestRecord.id.in_(ids)).all()
+    for r in records:
+        if r.status == "reviewed":
+            raise HTTPException(status_code=400, detail=f"记录 {r.record_no} 已审核，不可删除")
+        db.query(TestDetail).filter(TestDetail.record_id == r.id).delete()
+        db.query(AlertRecord).filter(AlertRecord.record_id == r.id).delete()
+        db.delete(r)
+    db.commit()
+    return {"success": True, "deleted": len(records)}
 
 
 @router.get("/dashboard/summary")
