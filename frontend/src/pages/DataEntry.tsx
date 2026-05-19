@@ -79,7 +79,15 @@ export default function DataEntry() {
   const [abnormalExpanded, setAbnormalExpanded] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'unsaved'>('idle');
   const [lastSaved, setLastSaved] = useState<string>('');
+  const [hasLatestData, setHasLatestData] = useState(false);
+  const [recordInfoExpanded, setRecordInfoExpanded] = useState(false);
+  const [legendExpanded, setLegendExpanded] = useState(false);
   const autoSaveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const undoStack = useRef<DetailRow[][]>([]);
+  const redoStack = useRef<DetailRow[][]>([]);
+  const isComposingRef = useRef(false);
+  const [changedCells, setChangedCells] = useState<Set<string>>(new Set());
 
   // ── Data Loading ──
   useEffect(() => { getWaterTypes().then(res => setWaterTypes(res.data)); }, []);
@@ -134,7 +142,31 @@ export default function DataEntry() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [autoSaveStatus]);
 
-  // ── Save last selections ──
+  // ── Keyboard shortcuts (Ctrl+Z undo, Ctrl+Y redo, ESC fullscreen) ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (isComposingRef.current) return; // Skip shortcuts during IME composition
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        if (undoStack.current.length > 0) {
+          redoStack.current.push(details);
+          setDetails(undoStack.current.pop()!);
+          setAutoSaveStatus('unsaved');
+        }
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        if (redoStack.current.length > 0) {
+          undoStack.current.push(details);
+          setDetails(redoStack.current.pop()!);
+          setAutoSaveStatus('unsaved');
+        }
+      } else if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [details, isFullscreen]);
   useEffect(() => {
     if (selectedWt) localStorage.setItem(LS_LAST_WT, String(selectedWt));
     if (selectedWt && selectedPointIds.length > 0) {
@@ -211,21 +243,34 @@ export default function DataEntry() {
     } catch { /* ignore */ }
   };
 
-  useEffect(() => { if (record) loadPhotos(); }, [record?.id]);
+  useEffect(() => {
+    if (record) {
+      loadPhotos();
+      // Check if there's historical data for copy-last
+      getLatestData(record.water_type_id).then(res => setHasLatestData(res.data.found));
+    }
+  }, [record?.id]);
 
   const handleUploadPhoto = async (samplePointId: number) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.multiple = true;
+    if (!fileInputRef.current) {
+      fileInputRef.current = document.createElement('input');
+      fileInputRef.current.type = 'file';
+      fileInputRef.current.accept = 'image/*';
+      fileInputRef.current.multiple = true;
+    }
+    const input = fileInputRef.current;
     input.onchange = async () => {
       if (!input.files || !record) return;
-      for (const file of Array.from(input.files)) {
+      const files = Array.from(input.files);
+      for (let i = 0; i < files.length; i++) {
         try {
-          await uploadPhoto(record.id, samplePointId, file);
-        } catch { message.error('上传失败'); }
+          message.loading({ content: `上传照片 ${i + 1}/${files.length}...`, key: 'upload', duration: 0 });
+          await uploadPhoto(record.id, samplePointId, files[i]);
+        } catch { message.error({ content: `照片 ${i + 1} 上传失败`, key: 'upload' }); }
       }
+      message.success({ content: `已上传 ${files.length} 张照片`, key: 'upload' });
       loadPhotos();
+      input.value = '';
     };
     input.click();
   };
@@ -238,10 +283,16 @@ export default function DataEntry() {
   };
 
   const updateCell = (samplePointId: number, indicatorId: number, value: string) => {
-    setDetails(prev => prev.map(d =>
-      d.sample_point_id === samplePointId && d.indicator_id === indicatorId
-        ? { ...d, value_text: value } : d
-    ));
+    if (isComposingRef.current) return; // Skip during IME composition
+    setDetails(prev => {
+      undoStack.current.push(prev);
+      if (undoStack.current.length > 50) undoStack.current.shift();
+      redoStack.current = [];
+      return prev.map(d =>
+        d.sample_point_id === samplePointId && d.indicator_id === indicatorId
+          ? { ...d, value_text: value } : d
+      );
+    });
     setAutoSaveStatus('unsaved');
   };
 
@@ -317,11 +368,13 @@ export default function DataEntry() {
     const rows = pasteText.trim().split('\n').map(line => line.split('\t'));
     if (rows.length === 0) { message.warning('无有效数据'); return; }
 
-    // Get visible sample points in order
     const visiblePoints = getVisiblePoints();
     const pointIds = visiblePoints.map(p => p.sample_point_id);
+    const highlighted = new Set<string>();
 
     setDetails(prev => {
+      undoStack.current.push(prev);
+      redoStack.current = [];
       const updated = [...prev];
       for (let r = 0; r < Math.min(rows.length, pointIds.length); r++) {
         const spId = pointIds[r];
@@ -330,12 +383,14 @@ export default function DataEntry() {
           const val = rows[r][c].trim();
           if (val) {
             const idx = updated.findIndex(d => d.sample_point_id === spId && d.indicator_id === indId);
-            if (idx >= 0) updated[idx] = { ...updated[idx], value_text: val };
+            if (idx >= 0) { updated[idx] = { ...updated[idx], value_text: val }; highlighted.add(`${spId}_${indId}`); }
           }
         }
       }
       return updated;
     });
+    setChangedCells(highlighted);
+    setTimeout(() => setChangedCells(new Set()), 3000);
     setAutoSaveStatus('unsaved');
     setPasteModalOpen(false);
     setPasteText('');
@@ -353,9 +408,15 @@ export default function DataEntry() {
   };
 
   const handleQuickFillColumn = (indicatorId: number, value: string) => {
-    setDetails(prev => prev.map(d =>
-      d.indicator_id === indicatorId ? { ...d, value_text: value } : d
-    ));
+    const visiblePtIds = new Set(getVisiblePoints().map(p => p.sample_point_id));
+    setDetails(prev => {
+      undoStack.current.push(prev);
+      redoStack.current = [];
+      return prev.map(d =>
+        d.indicator_id === indicatorId && visiblePtIds.has(d.sample_point_id)
+          ? { ...d, value_text: value } : d
+      );
+    });
     setAutoSaveStatus('unsaved');
   };
 
@@ -495,6 +556,19 @@ export default function DataEntry() {
         );
       }
 
+      // Cell-change highlight (from paste)
+      const cellKey = `${row.sample_point_id}_${ind.id}`;
+      const justChanged = changedCells.has(cellKey);
+
+      // Input validation
+      const lim = limits.find(l => l.indicator_id === ind.id);
+      let validationError = false;
+      if (detail?.value_text && lim && lim.max_value != null) {
+        const numVal = parseFloat(detail.value_text);
+        if (!isNaN(numVal) && numVal > lim.max_value * 2) validationError = true;
+        if (!isNaN(numVal) && lim.min_value != null && numVal < 0) validationError = true;
+      }
+
       return (
         <Input
           size="small"
@@ -502,12 +576,20 @@ export default function DataEntry() {
           onChange={e => updateCell(row.sample_point_id, ind.id, e.target.value)}
           onFocus={e => e.target.select()}
           onKeyDown={e => handleCellKeyDown(e, row.sample_point_id, ind.id)}
+          onCompositionStart={() => { isComposingRef.current = true; }}
+          onCompositionEnd={(e: any) => {
+            isComposingRef.current = false;
+            // Commit the final composed value
+            updateCell(row.sample_point_id, ind.id, e.target.value);
+          }}
           {...{ 'data-cell-input': '', 'data-sp-id': String(row.sample_point_id), 'data-ind-id': String(ind.id) } as any}
           style={{
             textAlign: 'center', borderRadius: 4, height: isFullscreen ? 40 : 36,
-            borderColor: isFail ? '#ff4d4f' : detail?.is_qualified === true ? '#b7eb8f' : '#d9d9d9',
-            background: isFail ? '#fff2f0' : detail?.is_qualified === true ? '#f6ffed' : '#fff',
+            borderColor: validationError ? '#faad14' : isFail ? '#ff4d4f' : detail?.is_qualified === true ? '#b7eb8f' : '#d9d9d9',
+            background: justChanged ? '#e6f7ff' : isFail ? '#fff2f0' : detail?.is_qualified === true ? '#f6ffed' : '#fff',
             fontSize: isFullscreen ? 16 : 14,
+            boxShadow: justChanged ? '0 0 0 2px #1890ff' : (validationError ? '0 0 0 2px #faad14' : undefined),
+            transition: 'all 0.3s ease',
           }}
           placeholder={ind.unit || ''}
         />
@@ -601,7 +683,7 @@ export default function DataEntry() {
             {isEditable && (
               <>
                 <Button icon={<SaveOutlined />} loading={saving} onClick={handleSave} style={{ borderRadius: 8 }}>保存</Button>
-                <Tooltip title="复制最近一次同类型报告数据"><Button icon={<CopyOutlined />} onClick={handleCopyLast} style={{ borderRadius: 8 }}>复制上日</Button></Tooltip>
+                <Tooltip title={hasLatestData ? '复制最近一次同类型报告数据' : '暂无历史数据'}><Button icon={<CopyOutlined />} onClick={handleCopyLast} disabled={!hasLatestData} style={{ borderRadius: 8 }}>复制上日</Button></Tooltip>
                 <Button icon={<SwapOutlined />} onClick={() => setPasteModalOpen(true)} style={{ borderRadius: 8 }}>批量粘贴</Button>
                 <Popconfirm title="提交后将无法修改，确认提交？" onConfirm={handleSubmit} okText="确认提交" cancelText="取消">
                   <Button type="primary" icon={<SendOutlined />} style={{ borderRadius: 8, background: 'linear-gradient(135deg, #0e7490, #0891b2)', border: 'none' }}>提交审核</Button>
@@ -651,7 +733,11 @@ export default function DataEntry() {
               onChange={setSelectedWt}
               options={waterTypes.map(wt => ({ label: `${wt.name} — ${wt.standard_code}`, value: wt.id }))}
             />
-            <DatePicker size="large" value={testDate} onChange={d => setTestDate(d || dayjs())} style={{ borderRadius: 8 }} />
+            <Space size={4}>
+              <DatePicker size="large" value={testDate} onChange={d => setTestDate(d || dayjs())} style={{ borderRadius: 8 }} />
+              <Button size="small" onClick={() => setTestDate(dayjs().subtract(1, 'day'))}>昨天</Button>
+              <Button size="small" onClick={() => setTestDate(dayjs())}>今天</Button>
+            </Space>
             <Input size="large" placeholder="化验员" value={tester} onChange={e => setTester(e.target.value)}
               style={{ width: 150, borderRadius: 8 }} prefix={<UserOutlined style={{ color: '#94a3b8' }} />}
             />
@@ -670,6 +756,34 @@ export default function DataEntry() {
                 <Space size="small">
                   <Button size="small" onClick={() => setSelectedPointIds(availablePoints.map((p: any) => p.id))}>全选</Button>
                   <Button size="small" onClick={() => setSelectedPointIds([])}>清空</Button>
+                  <Divider type="vertical" />
+                  <Button size="small" onClick={() => {
+                    const name = prompt('模板名称（用于保存当前选择）：');
+                    if (name) {
+                      const templates = JSON.parse(localStorage.getItem('water_point_templates') || '{}');
+                      templates[name] = { wtId: selectedWt, pointIds: selectedPointIds };
+                      localStorage.setItem('water_point_templates', JSON.stringify(templates));
+                      message.success(`模板「${name}」已保存`);
+                    }
+                  }}>保存模板</Button>
+                  <Select
+                    size="small" placeholder="加载模板" style={{ width: 130 }}
+                    value={undefined}
+                    onChange={name => {
+                      if (!name) return;
+                      const templates = JSON.parse(localStorage.getItem('water_point_templates') || '{}');
+                      const tmpl = templates[name];
+                      if (tmpl) {
+                        if (tmpl.wtId === selectedWt) {
+                          setSelectedPointIds(tmpl.pointIds.filter((id: number) => availablePoints.some((p: any) => p.id === id)));
+                          message.success(`已加载模板「${name}」`);
+                        } else {
+                          message.warning('模板水样类型不匹配');
+                        }
+                      }
+                    }}
+                    options={Object.keys(JSON.parse(localStorage.getItem('water_point_templates') || '{}')).map(k => ({ label: k, value: k }))}
+                  />
                 </Space>
               </div>
               <Checkbox.Group
@@ -689,17 +803,28 @@ export default function DataEntry() {
         </Card>
       )}
 
-      {/* Record Info Bar */}
+      {/* Record Info Bar (collapsible) */}
       {record && (
-        <Card size="small" style={{ borderRadius: 10, marginBottom: 16, background: '#f8fafc', border: '1px solid #e8ecf1' }}>
-          <Descriptions size="small" column={6} colon={false}>
-            <Descriptions.Item label="报告编号"><Typography.Text code>{record.record_no}</Typography.Text></Descriptions.Item>
-            <Descriptions.Item label="水样类型">{waterTypes.find(w => w.id === record.water_type_id)?.name}</Descriptions.Item>
-            <Descriptions.Item label="执行标准">{waterTypes.find(w => w.id === record.water_type_id)?.standard_code}</Descriptions.Item>
-            <Descriptions.Item label="化验日期">{record.test_date}</Descriptions.Item>
-            <Descriptions.Item label="化验员">{record.tester}</Descriptions.Item>
-            <Descriptions.Item label="审核人">{record.reviewer || '—'}</Descriptions.Item>
-          </Descriptions>
+        <Card size="small" style={{ borderRadius: 10, marginBottom: 16, background: '#f8fafc', border: '1px solid #e8ecf1' }}
+          bodyStyle={{ padding: recordInfoExpanded ? '12px 16px' : '6px 16px' }}>
+          {recordInfoExpanded ? (
+            <Descriptions size="small" column={6} colon={false}>
+              <Descriptions.Item label="报告编号"><Typography.Text code>{record.record_no}</Typography.Text></Descriptions.Item>
+              <Descriptions.Item label="水样类型">{waterTypes.find(w => w.id === record.water_type_id)?.name}</Descriptions.Item>
+              <Descriptions.Item label="执行标准">{waterTypes.find(w => w.id === record.water_type_id)?.standard_code}</Descriptions.Item>
+              <Descriptions.Item label="化验日期">{record.test_date}</Descriptions.Item>
+              <Descriptions.Item label="化验员">{record.tester}</Descriptions.Item>
+              <Descriptions.Item label="审核人">{record.reviewer || '—'}</Descriptions.Item>
+            </Descriptions>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Typography.Text code style={{ fontSize: 12 }}>{record.record_no}</Typography.Text>
+              <Typography.Text style={{ fontSize: 12, color: '#64748b' }}>{waterTypes.find(w => w.id === record.water_type_id)?.name} | {record.test_date} | 化验员: {record.tester}</Typography.Text>
+            </div>
+          )}
+          <Button type="link" size="small" onClick={() => setRecordInfoExpanded(!recordInfoExpanded)} style={{ position: 'absolute', right: 8, top: 4, fontSize: 11 }}>
+            {recordInfoExpanded ? '收起 ▲' : '展开 ▼'}
+          </Button>
         </Card>
       )}
 
@@ -732,14 +857,33 @@ export default function DataEntry() {
 
                 {/* Single point selector */}
                 {viewMode === 'single' && (
-                  <Select
-                    size="small" style={{ width: 200 }} value={singlePointId}
-                    onChange={setSinglePointId}
-                    options={allPoints.map(p => ({
-                      label: `${p.sample_point_name} (${getRowStatus(p.sample_point_id) === 'complete' ? '✓' : getRowStatus(p.sample_point_id) === 'partial' ? '◐' : '○'})`,
-                      value: p.sample_point_id,
-                    }))}
-                  />
+                  <>
+                    {areas.length > 1 && (
+                      <Select
+                        size="small" style={{ width: 120 }} value={activeArea}
+                        onChange={a => {
+                          setActiveArea(a);
+                          const areaPts = a === 'all' ? allPoints : allPoints.filter(p => p.sample_point_area === a);
+                          const incomplete = areaPts.find(p => getRowStatus(p.sample_point_id) !== 'complete');
+                          if (incomplete || areaPts[0]) setSinglePointId((incomplete || areaPts[0]).sample_point_id);
+                        }}
+                        options={[
+                          { label: `全部 (${totalPoints})`, value: 'all' },
+                          ...areas.map(a => ({ label: a, value: a })),
+                        ]}
+                      />
+                    )}
+                    <Select
+                      size="small" style={{ width: 200 }} value={singlePointId}
+                      onChange={setSinglePointId}
+                      options={allPoints
+                        .filter(p => activeArea === 'all' || p.sample_point_area === activeArea)
+                        .map(p => ({
+                          label: `${p.sample_point_name} (${getRowStatus(p.sample_point_id) === 'complete' ? '✓' : getRowStatus(p.sample_point_id) === 'partial' ? '◐' : '○'})`,
+                          value: p.sample_point_id,
+                        }))}
+                    />
+                  </>
                 )}
 
                 {/* Quick fills */}
@@ -762,25 +906,51 @@ export default function DataEntry() {
             </div>
           }
         >
-          {/* Legend + Progress bar */}
+          {/* Legend + Progress bar (collapsible) */}
           <div style={{
-            marginBottom: 12, padding: '8px 14px', background: '#f8fafc', borderRadius: 8,
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8,
+            marginBottom: 12, padding: '6px 14px', background: '#f8fafc', borderRadius: 8,
           }}>
-            <Space size="middle">
-              <Space size={4}><CheckCircleOutlined style={{ color: '#52c41a', fontSize: 12 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>已填完</Typography.Text></Space>
-              <Space size={4}><span style={{ color: '#faad14', fontSize: 12 }}>◐</span><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>部分填写</Typography.Text></Space>
-              <Space size={4}><span style={{ color: '#d9d9d9', fontSize: 12 }}>○</span><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>未填</Typography.Text></Space>
-              <Space size={4}><CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 12 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>超标</Typography.Text></Space>
-              <Divider type="vertical" />
-              <Space size={4}><div style={{ width: 12, height: 12, background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 2 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>合格</Typography.Text></Space>
-              <Space size={4}><div style={{ width: 12, height: 12, background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 2 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>超标</Typography.Text></Space>
-            </Space>
-            <Space size="small">
-              <Progress percent={Math.round(filledCells / (totalPoints * indicators.length) * 100)} size="small" style={{ width: 100 }}
-                strokeColor={abnormalItems.length > 0 ? '#faad14' : '#52c41a'} />
-              <Typography.Text style={{ fontSize: 12, color: '#64748b' }}>已完成 {completedPoints}/{totalPoints} 采样点</Typography.Text>
-            </Space>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+              <Space size="small">
+                <Progress percent={Math.round(filledCells / (totalPoints * indicators.length) * 100)} size="small" style={{ width: 80 }}
+                  strokeColor={abnormalItems.length > 0 ? '#faad14' : '#52c41a'} />
+                <Typography.Text
+                  style={{ fontSize: 12, color: '#0891b2', cursor: 'pointer', textDecoration: 'underline' }}
+                  onClick={() => {
+                    if (viewMode === 'single') {
+                      const nextIncomplete = allPoints.find(p => {
+                        const s = getRowStatus(p.sample_point_id);
+                        return s !== 'complete' && p.sample_point_id !== singlePointId;
+                      });
+                      if (nextIncomplete) setSinglePointId(nextIncomplete.sample_point_id);
+                    } else {
+                      const nextIncomplete = allPoints.find(p => getRowStatus(p.sample_point_id) !== 'complete');
+                      if (nextIncomplete && activeArea !== 'all' && nextIncomplete.sample_point_area !== activeArea) {
+                        setActiveArea(nextIncomplete.sample_point_area);
+                      }
+                    }
+                  }}
+                >
+                  已完成 {completedPoints}/{totalPoints} 采样点 {completedPoints < totalPoints ? '→ 跳转未完成' : '✓'}
+                </Typography.Text>
+              </Space>
+              <Button type="link" size="small" onClick={() => setLegendExpanded(!legendExpanded)} style={{ fontSize: 11, padding: 0 }}>
+                {legendExpanded ? '收起图例 ▲' : '图例说明 ▶'}
+              </Button>
+            </div>
+            {legendExpanded && (
+              <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
+                <Space size={4}><CheckCircleOutlined style={{ color: '#52c41a', fontSize: 12 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>已填完</Typography.Text></Space>
+                <Space size={4}><span style={{ color: '#faad14', fontSize: 12 }}>◐</span><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>部分填写</Typography.Text></Space>
+                <Space size={4}><span style={{ color: '#d9d9d9', fontSize: 12 }}>○</span><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>未填</Typography.Text></Space>
+                <Space size={4}><CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 12 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>超标</Typography.Text></Space>
+                <Divider type="vertical" />
+                <Space size={4}><div style={{ width: 12, height: 12, background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 2 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>合格</Typography.Text></Space>
+                <Space size={4}><div style={{ width: 12, height: 12, background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 2 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>超标</Typography.Text></Space>
+                <Divider type="vertical" />
+                <Space size={4}><div style={{ width: 12, height: 12, background: '#e6f7ff', border: '1px solid #91d5ff', borderRadius: 2 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>刚粘贴</Typography.Text></Space>
+              </div>
+            )}
           </div>
 
           {/* Area tabs (only in matrix mode) */}
@@ -801,36 +971,41 @@ export default function DataEntry() {
             />
           )}
 
-          {/* Abnormal Banner — collapsible */}
+          {/* Abnormal Banner — collapsible, context-aware */}
           {abnormalItems.length > 0 && (() => {
             const byPoint: Record<number, any[]> = {};
             abnormalItems.forEach(d => {
               if (!byPoint[d.sample_point_id]) byPoint[d.sample_point_id] = [];
               byPoint[d.sample_point_id].push(d);
             });
-            const pointCount = Object.keys(byPoint).length;
+            // In single-point mode, only show current point's items
+            const filteredByPoint = viewMode === 'single' && singlePointId
+              ? (byPoint[singlePointId] ? { [singlePointId]: byPoint[singlePointId] } : {})
+              : byPoint;
+            const pointCount = Object.keys(filteredByPoint).length;
+            const itemCount = Object.values(filteredByPoint).flat().length;
 
             return (
               <div style={{
                 marginBottom: 12, padding: '10px 18px', background: 'linear-gradient(135deg, #fff2f0, #fff7ed)',
                 borderRadius: 10, border: '1px solid #ffccc7',
               }}>
-                {/* Summary row — always visible */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
                   onClick={() => setAbnormalExpanded(!abnormalExpanded)}>
                   <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 16 }} />
                   <Typography.Text strong style={{ color: '#cf1322', fontSize: 13, flex: 1 }}>
-                    检出 {abnormalItems.length} 项超标（{pointCount} 个点位）
+                    {viewMode === 'single' && singlePointId
+                      ? `当前点位 ${itemCount} 项超标`
+                      : `检出 ${itemCount} 项超标（${pointCount} 个点位）`}
                   </Typography.Text>
                   <Button type="link" size="small" style={{ fontSize: 11 }}>
                     {abnormalExpanded ? '收起 ▲' : '展开 ▼'}
                   </Button>
                 </div>
 
-                {/* Detail rows — only when expanded */}
                 {abnormalExpanded && (
                   <div style={{ marginTop: 10 }}>
-                    {Object.entries(byPoint).map(([spId, items]) => {
+                    {Object.entries(filteredByPoint).map(([spId, items]) => {
                       const ptName = items[0]?.sample_point_name || '';
                       const pointPhotos = photos[parseInt(spId)] || [];
                       return (
@@ -926,8 +1101,21 @@ export default function DataEntry() {
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}>
             <Space size="large">
-              <Typography.Text style={{ fontSize: 12, color: '#64748b' }}>
-                <CheckCircleOutlined style={{ color: '#52c41a' }} /> 已完成 {completedPoints}/{totalPoints} 采样点
+              <Typography.Text
+                style={{ fontSize: 12, color: completedPoints < totalPoints ? '#0891b2' : '#64748b', cursor: completedPoints < totalPoints ? 'pointer' : 'default', textDecoration: completedPoints < totalPoints ? 'underline' : 'none' }}
+                onClick={() => {
+                  if (completedPoints >= totalPoints) return;
+                  if (viewMode === 'single') {
+                    const next = allPoints.find(p => getRowStatus(p.sample_point_id) !== 'complete' && p.sample_point_id !== singlePointId);
+                    if (next) { setSinglePointId(next.sample_point_id); if (next.sample_point_area !== activeArea) setActiveArea('all'); }
+                  } else {
+                    const next = allPoints.find(p => getRowStatus(p.sample_point_id) !== 'complete');
+                    if (next?.sample_point_area && next.sample_point_area !== activeArea) setActiveArea(next.sample_point_area);
+                  }
+                }}
+              >
+                <CheckCircleOutlined style={{ color: completedPoints >= totalPoints ? '#52c41a' : '#0891b2' }} /> 已完成 {completedPoints}/{totalPoints} 采样点
+                {completedPoints < totalPoints && ' → 跳转未完成'}
               </Typography.Text>
               {abnormalItems.length > 0 && (
                 <Typography.Text style={{ fontSize: 12, color: '#ff4d4f' }}>
@@ -942,13 +1130,13 @@ export default function DataEntry() {
             )}
           </div>
 
-          {/* Conclusion */}
-          {!isEditable && (
+          {/* Conclusion — always visible when record exists */}
+          {record && (
             <div style={{ marginTop: 20 }}>
               <Typography.Text strong style={{ fontSize: 14 }}>结论与备注</Typography.Text>
               <Input.TextArea
                 value={conclusion}
-                onChange={e => setConclusion(e.target.value)}
+                onChange={e => { setConclusion(e.target.value); setAutoSaveStatus('unsaved'); }}
                 placeholder={abnormalItems.length > 0 ? '说明超标原因及整改措施...' : '本次检测项目全部合格'}
                 rows={2}
                 disabled={record?.status === 'reviewed'}
@@ -989,6 +1177,7 @@ export default function DataEntry() {
           </Typography.Text>
         </div>
       </Modal>
+
     </div>
   );
 }
