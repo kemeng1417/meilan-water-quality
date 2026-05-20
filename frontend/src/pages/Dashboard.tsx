@@ -10,11 +10,14 @@ import dayjs from 'dayjs';
 import { getDashboardSummary, getRecords, getWaterTypes } from '../api/endpoints';
 import { WATER_TYPE_COLORS, STATUS_MAP } from '../theme/tokens';
 
+const todayStr = dayjs().format('YYYY-MM-DD');
+const monthStartStr = dayjs().startOf('month').format('YYYY-MM-DD');
+
 const statCards = [
-  { key: 'today_records', label: '今日报告', icon: <ExperimentOutlined />, color: '#1677ff', bg: 'stat-card-primary', nav: '/records' },
-  { key: 'this_month_records', label: '本月报告', icon: <ClockCircleOutlined />, color: '#52c41a', bg: 'stat-card-success', nav: '/records' },
+  { key: 'today_records', label: '今日报告', icon: <ExperimentOutlined />, color: '#1677ff', bg: 'stat-card-primary', nav: `/records?start_date=${todayStr}&end_date=${todayStr}` },
+  { key: 'this_month_records', label: '本月报告', icon: <ClockCircleOutlined />, color: '#52c41a', bg: 'stat-card-success', nav: `/records?start_date=${monthStartStr}&end_date=${todayStr}` },
   { key: 'pending_review', label: '待审核', icon: <CheckCircleOutlined />, color: '#faad14', bg: 'stat-card-warning', nav: '/records?status=submitted' },
-  { key: 'abnormal_count', label: '异常报告', icon: <WarningOutlined />, color: '#ff4d4f', bg: 'stat-card-danger', nav: '/alerts?status=open' },
+  { key: 'abnormal_count', label: '异常报告', icon: <WarningOutlined />, color: '#ff4d4f', bg: 'stat-card-danger', nav: '/records?is_abnormal=true' },
 ];
 
 export default function Dashboard() {

@@ -17,6 +17,13 @@ export const getIndicators = (waterTypeId?: number) =>
 export const getLimits = (waterTypeId: number) =>
   client.get('/limits', { params: { water_type_id: waterTypeId } });
 
+// Sample points
+export const getSamplePointUsageStats = () =>
+  client.get('/sample-points/usage-stats');
+
+export const batchUpdateSamplePoints = (ids: number[], updates: Record<string, unknown>) =>
+  client.put('/sample-points/batch-update', { ids, updates });
+
 // Sample points (默认只返回启用的点位)
 export const getSamplePoints = (waterTypeId?: number, activeOnly: boolean | null = true) =>
   client.get('/sample-points', {

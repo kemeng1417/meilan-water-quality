@@ -33,6 +33,7 @@ def list_records(
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
     keyword: str | None = Query(None),
+    is_abnormal: bool | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -46,6 +47,8 @@ def list_records(
         q = q.filter(TestRecord.test_date >= start_date)
     if end_date:
         q = q.filter(TestRecord.test_date <= end_date)
+    if is_abnormal is not None:
+        q = q.filter(TestRecord.is_abnormal == is_abnormal)
     if keyword:
         q = q.filter(
             (TestRecord.record_no.contains(keyword)) |
@@ -63,6 +66,8 @@ def list_records(
         count_q = count_q.filter(TestRecord.test_date >= start_date)
     if end_date:
         count_q = count_q.filter(TestRecord.test_date <= end_date)
+    if is_abnormal is not None:
+        count_q = count_q.filter(TestRecord.is_abnormal == is_abnormal)
     if keyword:
         count_q = count_q.filter(
             (TestRecord.record_no.contains(keyword)) |

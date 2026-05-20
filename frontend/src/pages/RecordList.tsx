@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Table, Card, Button, Select, DatePicker, Space, Tag, Typography, message,
   Popconfirm, Row, Col, Input, Badge, Tooltip, Modal,
@@ -21,22 +21,31 @@ const { RangePicker } = DatePicker;
 
 export default function RecordList() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
-  // ── Load saved filters ──
+  // ── Load saved filters, URL params take priority ──
   const savedFilters = (() => {
     try { return JSON.parse(localStorage.getItem(LS_FILTERS) || '{}'); } catch { return {}; }
   })();
+
+  const urlFilters = {
+    status: searchParams.get('status') || undefined,
+    start_date: searchParams.get('start_date') || undefined,
+    end_date: searchParams.get('end_date') || undefined,
+    is_abnormal: searchParams.get('is_abnormal') ? searchParams.get('is_abnormal') === 'true' : undefined,
+  };
 
   const [data, setData] = useState<any>({ items: [], total: 0, status_counts: {} });
   const [loading, setLoading] = useState(false);
   const [waterTypes, setWaterTypes] = useState<{ id: number; name: string; code: string }[]>([]);
   const [filters, setFilters] = useState({
     water_type_id: savedFilters.water_type_id || undefined as number | undefined,
-    status: savedFilters.status || undefined as string | undefined,
+    status: urlFilters.status || savedFilters.status || undefined as string | undefined,
     keyword: savedFilters.keyword || '',
-    start_date: savedFilters.start_date || undefined as string | undefined,
-    end_date: savedFilters.end_date || undefined as string | undefined,
+    start_date: urlFilters.start_date || savedFilters.start_date || undefined as string | undefined,
+    end_date: urlFilters.end_date || savedFilters.end_date || undefined as string | undefined,
+    is_abnormal: urlFilters.is_abnormal !== undefined ? urlFilters.is_abnormal : undefined,
     page: 1,
     page_size: 20,
   });
@@ -70,6 +79,7 @@ export default function RecordList() {
     if (filters.keyword) params.keyword = filters.keyword;
     if (filters.start_date) params.start_date = filters.start_date;
     if (filters.end_date) params.end_date = filters.end_date;
+    if (filters.is_abnormal !== undefined) params.is_abnormal = filters.is_abnormal;
     getRecords(params)
       .then(res => { setData(res.data); setSelectedRowKeys([]); })
       .finally(() => setLoading(false));
@@ -99,7 +109,7 @@ export default function RecordList() {
 
   const handleReset = () => {
     setDateRange(null);
-    setFilters({ water_type_id: undefined, status: undefined, keyword: '', start_date: undefined, end_date: undefined, page: 1, page_size: 20 });
+    setFilters({ water_type_id: undefined, status: undefined, keyword: '', start_date: undefined, end_date: undefined, is_abnormal: undefined, page: 1, page_size: 20 });
     localStorage.removeItem(LS_FILTERS);
   };
 

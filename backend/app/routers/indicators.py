@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import WaterType, Indicator, StandardLimit, SamplePoint
+from app.models import WaterType, Indicator, StandardLimit, SamplePoint, TestDetail, TestRecord
 from app.schemas import SamplePointCreate
 
 router = APIRouter(prefix="/api", tags=["基础数据"])
@@ -56,6 +56,20 @@ def list_sample_points(
     return q.order_by(SamplePoint.area, SamplePoint.sort_order).all()
 
 
+@router.get("/sample-points/usage-stats")
+def get_sample_point_usage_stats(db: Session = Depends(get_db)):
+    """返回每个采样点的使用统计：检测次数、最近检测日期"""
+    from sqlalchemy import func as sqlfunc, distinct
+    rows = db.query(
+        SamplePoint.id.label("sample_point_id"),
+        sqlfunc.count(TestDetail.id).label("record_count"),
+        sqlfunc.max(TestRecord.test_date).label("last_test_date"),
+    ).outerjoin(TestDetail, TestDetail.sample_point_id == SamplePoint.id
+    ).outerjoin(TestRecord, TestRecord.id == TestDetail.record_id
+    ).group_by(SamplePoint.id).all()
+    return [{"sample_point_id": r.sample_point_id, "record_count": r.record_count, "last_test_date": str(r.last_test_date) if r.last_test_date else None} for r in rows]
+
+
 @router.post("/sample-points")
 def create_sample_point(req: SamplePointCreate, db: Session = Depends(get_db)):
     pt = SamplePoint(**req.model_dump())
@@ -74,6 +88,17 @@ def update_sample_point(point_id: int, req: SamplePointCreate, db: Session = Dep
         setattr(pt, k, v)
     db.commit()
     return pt
+
+
+@router.put("/sample-points/batch-update")
+def batch_update_sample_points(ids: list[int], updates: dict, db: Session = Depends(get_db)):
+    """批量更新采样点（启用/停用/修改区域等）"""
+    pts = db.query(SamplePoint).filter(SamplePoint.id.in_(ids)).all()
+    for pt in pts:
+        for k, v in updates.items():
+            setattr(pt, k, v)
+    db.commit()
+    return {"success": True, "updated": len(pts)}
 
 
 @router.delete("/sample-points/{point_id}")
