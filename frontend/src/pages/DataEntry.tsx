@@ -307,6 +307,10 @@ export default function DataEntry() {
       const res = await saveDetails(record.id, items);
       const detRes = await getDetails(record.id);
       setDetails(detRes.data);
+      // Use auto-generated conclusion if not manually set
+      if (res.data.conclusion && !conclusion) {
+        setConclusion(res.data.conclusion);
+      }
       setLastSaved(dayjs().format('HH:mm:ss'));
       setAutoSaveStatus('saved');
       if (!isAutoSave) {

@@ -244,8 +244,25 @@ def batch_save_details(record_id: int, items: list[TestDetailUpdate], db: Sessio
                 ))
 
     record.is_abnormal = has_abnormal
+
+    # ── Auto-generate conclusion if not manually edited ──
+    if not record.conclusion:
+        if has_abnormal:
+            abnormal_details = db.query(TestDetail).filter(TestDetail.record_id == record_id, TestDetail.is_abnormal == True).all()
+            pt_ids = list(set(d.sample_point_id for d in abnormal_details))
+            ind_ids = list(set(d.indicator_id for d in abnormal_details))
+            pt_names = [p.name for p in db.query(SamplePoint).filter(SamplePoint.id.in_(pt_ids)).all()]
+            ind_names = [i.name for i in db.query(Indicator).filter(Indicator.id.in_(ind_ids)).all()]
+            water_type = db.query(WaterType).filter(WaterType.id == record.water_type_id).first()
+            std = water_type.standard_code if water_type else "相关标准"
+            record.conclusion = f"本次检测发现 {len(abnormal_details)} 项超标，涉及 {len(pt_ids)} 个采样点（{'、'.join(pt_names[:5])}{'等' if len(pt_ids) > 5 else ''}）。超标指标：{'、'.join(ind_names)}。不符合{std}标准要求，需整改。"
+        else:
+            water_type = db.query(WaterType).filter(WaterType.id == record.water_type_id).first()
+            std = water_type.standard_code if water_type else "相关标准"
+            record.conclusion = f"本次检测项目全部合格，符合{std}标准要求。"
+
     db.commit()
-    return {"success": True, "has_abnormal": has_abnormal}
+    return {"success": True, "has_abnormal": has_abnormal, "conclusion": record.conclusion}
 
 
 @router.put("/{record_id}/review")

@@ -9,7 +9,7 @@ import os
 import tempfile
 
 from app.database import get_db
-from app.models import TestRecord, TestDetail, SamplePoint, Indicator, StandardLimit, WaterType
+from app.models import TestRecord, TestDetail, SamplePoint, Indicator, StandardLimit, WaterType, Photo
 from app.services.report_gen import generate_word_report, generate_html_report
 
 router = APIRouter(prefix="/api/export", tags=["导出"])
@@ -168,6 +168,29 @@ def export_excel(record_id: int, db: Session = Depends(get_db)):
     c = ws.cell(row=sig_row, column=1,
                 value=f"化验员：{record.tester}              审核人：{record.reviewer or '___________'}              日期：{record.report_date}")
     c.font = Font(name="宋体", size=10)
+
+    # ── 照片 ──
+    photos = db.query(Photo).filter(Photo.record_id == record_id).all()
+    if photos:
+        photo_start = sig_row + 2
+        ws.merge_cells(start_row=photo_start, start_column=1, end_row=photo_start, end_column=total_cols)
+        c = ws.cell(row=photo_start, column=1, value="现场照片：")
+        c.font = Font(name="宋体", size=10, bold=True)
+
+        photo_by_point: dict[int, list] = {}
+        for p in photos:
+            photo_by_point.setdefault(p.sample_point_id, []).append(p)
+
+        sp_map = {sp.id: sp for sp in points}
+        row = photo_start + 1
+        for sp_id, pt_photos in photo_by_point.items():
+            sp_name = sp_map[sp_id].name if sp_id in sp_map else f"点位{sp_id}"
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=total_cols)
+            filenames = '、'.join([p.original_name for p in pt_photos])
+            c = ws.cell(row=row, column=1, value=f"  {sp_name}：{filenames}")
+            c.font = Font(name="宋体", size=9)
+            c.alignment = Alignment(wrap_text=True)
+            row += 1
 
     # ── 冻结表头 ──
     ws.freeze_panes = ws.cell(row=limit_row + 1, column=3)

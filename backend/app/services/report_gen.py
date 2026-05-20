@@ -8,7 +8,11 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.section import WD_ORIENT
 from docx.oxml.ns import qn
 
-from app.models import TestRecord, TestDetail, SamplePoint, Indicator, WaterType, StandardLimit
+import os
+from app.models import TestRecord, TestDetail, SamplePoint, Indicator, WaterType, StandardLimit, Photo
+from app.config import DATA_DIR
+
+PHOTOS_DIR = os.path.join(DATA_DIR, "photos")
 
 
 def generate_word_report(db: Session, record_id: int) -> io.BytesIO:
@@ -149,6 +153,43 @@ def generate_word_report(db: Session, record_id: int) -> io.BytesIO:
     cr.font.name = '宋体'
     cr.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
 
+    # ── 照片 ──
+    photos = db.query(Photo).filter(Photo.record_id == record_id).all()
+    if photos:
+        doc.add_paragraph()
+        photo_title = doc.add_paragraph()
+        photo_title.paragraph_format.space_before = Pt(10)
+        pr = photo_title.add_run("现场照片：")
+        pr.bold = True
+        pr.font.size = Pt(12)
+        pr.font.name = '宋体'
+        pr.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+
+        # Group photos by sample point
+        photo_by_point: dict[int, list] = {}
+        for p in photos:
+            photo_by_point.setdefault(p.sample_point_id, []).append(p)
+
+        sp_map = {sp.id: sp for sp in sample_points}
+        for sp_id, pt_photos in photo_by_point.items():
+            sp = sp_map.get(sp_id)
+            sp_name = sp.name if sp else f"点位{sp_id}"
+            lbl = doc.add_paragraph()
+            lr = lbl.add_run(f"{sp_name}：")
+            lr.font.size = Pt(11)
+            lr.font.name = '宋体'
+            lr.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+
+            for p in pt_photos:
+                filepath = os.path.join(PHOTOS_DIR, p.filename)
+                if os.path.exists(filepath):
+                    try:
+                        doc.add_picture(filepath, width=Cm(5))
+                        last_paragraph = doc.paragraphs[-1]
+                        last_paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    except Exception:
+                        doc.add_paragraph(f"[照片: {p.original_name}]")
+
     # ── 签名 ──
     sig = doc.add_paragraph()
     sig.paragraph_format.space_before = Pt(16)
@@ -236,6 +277,34 @@ def generate_html_report(db: Session, record_id: int) -> str:
         conc_html = f"结论：本次检测项目全部合格，符合{water_type.standard_code if water_type else '相关'}标准要求。"
         conc_cls = ''
 
+    # ── Photos (base64 embedded) ──
+    photos_html = ""
+    photos = db.query(Photo).filter(Photo.record_id == record_id).all()
+    if photos:
+        import base64
+        photos_html += '<div class="photos"><h3>现场照片</h3>'
+        photo_by_point: dict[int, list] = {}
+        for p in photos:
+            photo_by_point.setdefault(p.sample_point_id, []).append(p)
+
+        sp_map = {sp.id: sp for sp in sample_points}
+        for sp_id, pt_photos in photo_by_point.items():
+            sp_name = sp_map[sp_id].name if sp_id in sp_map else f"点位{sp_id}"
+            photos_html += f'<div class="photo-group"><p class="photo-label">{sp_name}：</p>'
+            for p in pt_photos:
+                filepath = os.path.join(PHOTOS_DIR, p.filename)
+                if os.path.exists(filepath):
+                    try:
+                        with open(filepath, "rb") as f:
+                            b64 = base64.b64encode(f.read()).decode()
+                            ext = os.path.splitext(p.filename)[1].lower().replace('.', '')
+                            mime = f"image/{'jpeg' if ext in ('jpg', 'jpeg') else ext}"
+                            photos_html += f'<img src="data:{mime};base64,{b64}" alt="{p.original_name}" class="photo" />'
+                    except Exception:
+                        photos_html += f'<span class="photo-missing">[照片: {p.original_name}]</span>'
+            photos_html += '</div>'
+        photos_html += '</div>'
+
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -259,6 +328,12 @@ def generate_html_report(db: Session, record_id: int) -> str:
   .signature {{ margin-top: 28px; font-size: 11pt; }}
   .print-btn {{ position: fixed; top: 16px; right: 16px; padding: 10px 24px; background: #1e40af; color: #fff; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; z-index: 1000; }}
   .print-btn:hover {{ background: #1e3a8a; }}
+  .photos {{ margin-top: 20px; }}
+  .photos h3 {{ font-size: 12pt; margin-bottom: 8px; }}
+  .photo-group {{ margin-bottom: 10px; }}
+  .photo-label {{ font-size: 10pt; font-weight: bold; margin-bottom: 4px; }}
+  .photo {{ max-width: 200px; max-height: 150px; margin: 4px; border-radius: 6px; border: 1px solid #e8ecf1; }}
+  .photo-missing {{ font-size: 9pt; color: #94a3b8; }}
   @media print {{
     body {{ padding: 10px 16px; }}
     @page {{ size: A4 landscape; margin: 1cm; }}
@@ -280,6 +355,7 @@ def generate_html_report(db: Session, record_id: int) -> str:
 </tbody>
 </table>
 <p class="conclusion {conc_cls}">{conc_html}</p>
+{photos_html}
 <p class="signature">化验员：{record.tester} &emsp;&emsp;&emsp;&emsp; 审核人：{record.reviewer or '___________'} &emsp;&emsp;&emsp;&emsp; 日期：{record.report_date}</p>
 </body>
 </html>"""
