@@ -52,7 +52,7 @@ export default function Dashboard() {
       grid: { top: 20, left: 40, right: 40, bottom: 30 },
       xAxis: { type: 'category' as const, data: dates, axisLabel: { fontSize: 10 } },
       yAxis: [
-        { type: 'value' as const, min: 80, max: 100, axisLabel: { fontSize: 10, formatter: '{value}%' }, splitLine: { lineStyle: { type: 'dashed' } } },
+        { type: 'value' as const, axisLabel: { fontSize: 10, formatter: '{value}%' }, splitLine: { lineStyle: { type: 'dashed' } } },
         { type: 'value' as const, axisLabel: { fontSize: 10 }, splitLine: { show: false } },
       ],
       series: [
@@ -114,18 +114,18 @@ export default function Dashboard() {
         ))}
       </Row>
 
-      <Row gutter={[16, 16]}>
+      <Row gutter={[16, 16]} align="stretch">
         {/* Weekly Trend */}
-        <Col xs={24} lg={14}>
+        <Col xs={24} lg={14} style={{ display: 'flex' }}>
           <Card
             title={<Typography.Text strong>近 7 天合格率趋势</Typography.Text>}
-            style={{ borderRadius: 12, marginBottom: 16 }}
-            bodyStyle={{ padding: '8px 16px 16px' }}
+            style={{ borderRadius: 12, width: '100%', display: 'flex', flexDirection: 'column' }}
+            bodyStyle={{ padding: '8px 16px 16px', flex: 1, display: 'flex', flexDirection: 'column' }}
           >
             {summary.weekly_trend ? (
-              <ReactECharts option={trendOption()} style={{ height: 220 }} />
+              <ReactECharts option={trendOption()} style={{ flex: 1, minHeight: 380 }} />
             ) : (
-              <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>加载中...</div>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>加载中...</div>
             )}
           </Card>
         </Col>

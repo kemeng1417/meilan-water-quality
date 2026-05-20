@@ -39,10 +39,12 @@ def export_excel(record_id: int, db: Session = Depends(get_db)):
         SamplePoint.id.in_(list(set(d.sample_point_id for d in details)))
     ).order_by(SamplePoint.area, SamplePoint.sort_order).all()
 
-    limit_wt_id = 1 if record.water_type_id == 4 else record.water_type_id
-    limits = {l.indicator_id: l for l in db.query(StandardLimit).filter(
-        StandardLimit.water_type_id == limit_wt_id
-    ).all()}
+    if record.water_type_id == 4:
+        limits_1 = {l.indicator_id: l for l in db.query(StandardLimit).filter(StandardLimit.water_type_id == 1).all()}
+        limits_2 = {l.indicator_id: l for l in db.query(StandardLimit).filter(StandardLimit.water_type_id == 2).all()}
+    else:
+        limits_1 = {l.indicator_id: l for l in db.query(StandardLimit).filter(StandardLimit.water_type_id == record.water_type_id).all()}
+        limits_2 = None
 
     matrix = {}
     for d in details:
@@ -110,8 +112,9 @@ def export_excel(record_id: int, db: Session = Depends(get_db)):
     ws.cell(row=limit_row, column=1, value="")
     ws.cell(row=limit_row, column=2, value="标准限值")
     for i, ind in enumerate(indicators):
-        lim = limits.get(ind.id)
-        txt = _fmt_limit_short(ind, lim) if lim else "—"
+        lim = limits_1.get(ind.id)
+        lim2 = limits_2.get(ind.id) if limits_2 else None
+        txt = _fmt_limit_short(ind, lim, lim2)
         ws.cell(row=limit_row, column=3 + i, value=txt)
 
     # ── 数据行 ──
@@ -258,13 +261,23 @@ def export_pdf(record_id: int, db: Session = Depends(get_db)):
                         headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 
-def _fmt_limit_short(indicator, limit) -> str:
-    if limit.qual_check:
-        return limit.qual_check
-    if limit.min_value is not None and limit.max_value is not None:
-        return f"{limit.min_value}-{limit.max_value}"
-    if limit.max_value is not None:
-        return f"≤{limit.max_value}"
-    if limit.min_value is not None:
-        return f"≥{limit.min_value}"
-    return '—'
+def _fmt_limit_short(indicator, limit, limit2=None) -> str:
+    def _fmt_one(lim):
+        if not lim:
+            return None
+        if lim.qual_check:
+            return lim.qual_check
+        if lim.min_value is not None and lim.max_value is not None:
+            return f"{lim.min_value}-{lim.max_value}"
+        if lim.max_value is not None:
+            return f"≤{lim.max_value}"
+        if lim.min_value is not None:
+            return f"≥{lim.min_value}"
+        return None
+    t1 = _fmt_one(limit)
+    if not limit2:
+        return t1 or '—'
+    t2 = _fmt_one(limit2)
+    if not t2 or t1 == t2:
+        return t1 or '—'
+    return f"出厂:{t1} 末梢:{t2}"

@@ -77,7 +77,7 @@ def list_records(
     for s in ['draft', 'submitted', 'reviewed', 'rejected']:
         status_counts[s] = count_q.filter(TestRecord.status == s).count()
 
-    records = q.order_by(TestRecord.test_date.desc(), TestRecord.created_at.desc()).offset(
+    records = q.order_by(TestRecord.created_at.desc()).offset(
         (page - 1) * page_size
     ).limit(page_size).all()
 
@@ -90,7 +90,7 @@ def list_records(
 
 @router.post("", response_model=TestRecordOut)
 def create_record(req: TestRecordCreate, db: Session = Depends(get_db)):
-    report_date = req.report_date or req.test_date
+    report_date = req.report_date or date.today()
     record = TestRecord(
         record_no=_gen_record_no(db, req.water_type_id, req.test_date),
         water_type_id=req.water_type_id,
@@ -367,7 +367,7 @@ def dashboard_summary(db: Session = Depends(get_db)):
     ).count()
     pending_review = db.query(TestRecord).filter(
         TestRecord.test_date >= this_month_start,
-        TestRecord.status.in_(["draft", "submitted", "rejected"]),
+        TestRecord.status == "submitted",
     ).count()
 
     # 合格率

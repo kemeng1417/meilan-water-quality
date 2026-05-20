@@ -52,7 +52,7 @@ export const getSamplePoints = (waterTypeId?: number, activeOnly: boolean | null
 export const getRecords = (params: Record<string, unknown>) =>
   client.get('/records', { params });
 
-export const createRecord = (data: { water_type_id: number; test_date: string; tester: string; point_ids?: number[] }) =>
+export const createRecord = (data: { water_type_id: number; test_date: string; report_date?: string; tester: string; point_ids?: number[] }) =>
   client.post('/records', data);
 
 export const getRecord = (id: number) => client.get(`/records/${id}`);

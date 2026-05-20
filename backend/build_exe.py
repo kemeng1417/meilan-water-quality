@@ -20,11 +20,13 @@ PyInstaller.__main__.run([
     f"--add-data={PROJECT_ROOT}/frontend/dist{os.pathsep}frontend/dist",
     # 隐藏导入
     "--hidden-import=sqlalchemy.ext.declarative",
-    "--hidden-import=passlib.handlers.bcrypt",
+    "--hidden-import=bcrypt",
     "--hidden-import=jinja2",
     "--hidden-import=openpyxl",
     "--hidden-import=python-docx",
-    "--hidden-import=bcrypt",
+    "--hidden-import=docx",
+    "--hidden-import=win32com",
+    "--hidden-import=win32com.client",
     # 收集所有子模块
     "--collect-all=app",
 ])

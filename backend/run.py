@@ -21,5 +21,9 @@ if __name__ == "__main__":
     print("  API 文档:   http://localhost:8000/docs")
     print("\n  按 Ctrl+C 停止服务\n")
 
-    webbrowser.open("http://localhost:8000")
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, log_level="info")
+    try:
+        webbrowser.open("http://localhost:8000")
+    except Exception:
+        pass
+
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, log_level="warning")

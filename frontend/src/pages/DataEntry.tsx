@@ -57,6 +57,7 @@ export default function DataEntry() {
   );
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [limits, setLimits] = useState<LimitInfo[]>([]);
+  const [limits2, setLimits2] = useState<LimitInfo[]>([]); // combined report second limits
   const [availablePoints, setAvailablePoints] = useState<any[]>([]);
   const [selectedPointIds, setSelectedPointIds] = useState<number[]>([]);
   const [record, setRecord] = useState<any>(null);
@@ -65,6 +66,7 @@ export default function DataEntry() {
   const [saving, setSaving] = useState(false);
   const [tester, setTester] = useState(user.display_name || '');
   const [testDate, setTestDate] = useState<dayjs.Dayjs>(dayjs());
+  const [reportDate, setReportDate] = useState<dayjs.Dayjs>(dayjs());
   const [conclusion, setConclusion] = useState('');
   const [reviewer, setReviewer] = useState('');
 
@@ -96,6 +98,12 @@ export default function DataEntry() {
     if (!selectedWt) return;
     getIndicators(selectedWt).then(res => setIndicators(res.data));
     getLimits(selectedWt).then(res => setLimits(res.data));
+    // For combined type (4), also load limits for type 2 (末梢水)
+    if (selectedWt === 4) {
+      getLimits(2).then(res => setLimits2(res.data));
+    } else {
+      setLimits2([]);
+    }
     getSamplePoints(selectedWt).then(res => {
       setAvailablePoints(res.data);
       if (!recordId) {
@@ -183,6 +191,7 @@ export default function DataEntry() {
       const res = await createRecord({
         water_type_id: selectedWt,
         test_date: testDate.format('YYYY-MM-DD'),
+        report_date: reportDate.format('YYYY-MM-DD'),
         tester,
         point_ids: selectedPointIds.length > 0 ? selectedPointIds : undefined,
       });
@@ -460,14 +469,20 @@ export default function DataEntry() {
   };
 
   // ── Helpers ──
-  const getLimitText = (indicatorId: number): string => {
-    const lim = limits.find(l => l.indicator_id === indicatorId);
-    if (!lim) return '';
+  const _fmtOne = (lim: LimitInfo | undefined) => {
+    if (!lim) return null;
     if (lim.qual_check) return lim.qual_check;
     if (lim.min_value != null && lim.max_value != null) return `${lim.min_value}~${lim.max_value}`;
     if (lim.max_value != null) return `≤${lim.max_value}`;
     if (lim.min_value != null) return `≥${lim.min_value}`;
-    return '';
+    return null;
+  };
+
+  const getLimitText = (indicatorId: number): string => {
+    const t1 = _fmtOne(limits.find(l => l.indicator_id === indicatorId));
+    const t2 = _fmtOne(limits2.find(l => l.indicator_id === indicatorId));
+    if (!t2 || t1 === t2) return t1 || '';
+    return `出厂:${t1} 末梢:${t2}`;
   };
 
   const grouped = details.reduce<Record<number, DetailRow[]>>((acc, d) => {
@@ -733,9 +748,15 @@ export default function DataEntry() {
               options={waterTypes.map(wt => ({ label: `${wt.name} — ${wt.standard_code}`, value: wt.id }))}
             />
             <Space size={4}>
+              <span style={{ fontSize: 13, color: '#64748b' }}>化验日期：</span>
               <DatePicker size="large" value={testDate} onChange={d => setTestDate(d || dayjs())} style={{ borderRadius: 8 }} />
               <Button size="small" onClick={() => setTestDate(dayjs().subtract(1, 'day'))}>昨天</Button>
               <Button size="small" onClick={() => setTestDate(dayjs())}>今天</Button>
+            </Space>
+            <Space size={4}>
+              <span style={{ fontSize: 13, color: '#64748b' }}>报告日期：</span>
+              <DatePicker size="large" value={reportDate} onChange={d => setReportDate(d || dayjs())} style={{ borderRadius: 8 }} />
+              <Button size="small" onClick={() => setReportDate(dayjs())}>今天</Button>
             </Space>
             <Input size="large" placeholder="化验员" value={tester} onChange={e => setTester(e.target.value)}
               style={{ width: 150, borderRadius: 8 }} prefix={<UserOutlined style={{ color: '#94a3b8' }} />}
@@ -812,13 +833,14 @@ export default function DataEntry() {
               <Descriptions.Item label="水样类型">{waterTypes.find(w => w.id === record.water_type_id)?.name}</Descriptions.Item>
               <Descriptions.Item label="执行标准">{waterTypes.find(w => w.id === record.water_type_id)?.standard_code}</Descriptions.Item>
               <Descriptions.Item label="化验日期">{record.test_date}</Descriptions.Item>
+              <Descriptions.Item label="报告日期">{record.report_date}</Descriptions.Item>
               <Descriptions.Item label="化验员">{record.tester}</Descriptions.Item>
               <Descriptions.Item label="审核人">{record.reviewer || '—'}</Descriptions.Item>
             </Descriptions>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Typography.Text code style={{ fontSize: 12 }}>{record.record_no}</Typography.Text>
-              <Typography.Text style={{ fontSize: 12, color: '#64748b' }}>{waterTypes.find(w => w.id === record.water_type_id)?.name} | {record.test_date} | 化验员: {record.tester}</Typography.Text>
+              <Typography.Text style={{ fontSize: 12, color: '#64748b' }}>{waterTypes.find(w => w.id === record.water_type_id)?.name} | 化验: {record.test_date} | 报告: {record.report_date} | 化验员: {record.tester}</Typography.Text>
             </div>
           )}
           <Button type="link" size="small" onClick={() => setRecordInfoExpanded(!recordInfoExpanded)} style={{ position: 'absolute', right: 8, top: 4, fontSize: 11 }}>
