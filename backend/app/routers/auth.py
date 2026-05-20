@@ -87,6 +87,20 @@ def update_user(user_id: int, req: dict, token: str = Depends(_get_token), db: S
     return {"success": True}
 
 
+@router.put("/me/display-name")
+def update_my_name(req: dict, token: str = Depends(_get_token), db: Session = Depends(get_db)):
+    """当前用户修改自己的显示名 (body: {display_name})"""
+    user = get_current_user(db, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="无效的登录凭证")
+    name = req.get("display_name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="显示名不能为空")
+    user.display_name = name
+    db.commit()
+    return {"success": True, "display_name": name}
+
+
 @router.post("/change-password")
 def change_password(req: dict, token: str = Depends(_get_token), db: Session = Depends(get_db)):
     """任何用户修改自己的密码 (body: {old_password, new_password})"""

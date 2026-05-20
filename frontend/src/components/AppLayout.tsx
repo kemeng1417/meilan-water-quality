@@ -14,8 +14,9 @@ import {
   BellOutlined,
   TeamOutlined,
   KeyOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
-import { changePassword } from '../api/endpoints';
+import { changePassword, updateMyDisplayName } from '../api/endpoints';
 
 const { Header, Content } = Layout;
 
@@ -24,6 +25,8 @@ export default function AppLayout() {
   const [oldPwd, setOldPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [pwdLoading, setPwdLoading] = useState(false);
+  const [nameModal, setNameModal] = useState(false);
+  const [editName, setEditName] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
   const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -68,6 +71,17 @@ export default function AppLayout() {
       setPasswordModal(false); setOldPwd(''); setNewPwd('');
     } catch { message.error('修改失败，请检查原密码'); }
     finally { setPwdLoading(false); }
+  };
+
+  const handleEditName = async () => {
+    if (!editName.trim()) { message.warning('姓名不能为空'); return; }
+    try {
+      const res = await updateMyDisplayName(editName.trim());
+      message.success('姓名已更新');
+      const u = { ...user, display_name: res.data.display_name };
+      localStorage.setItem('user', JSON.stringify(u));
+      window.location.reload();
+    } catch { message.error('更新失败'); }
   };
 
   return (
@@ -141,6 +155,11 @@ export default function AppLayout() {
                 },
                 { type: 'divider' },
                 {
+                  key: 'editname',
+                  icon: <EditOutlined />,
+                  label: '编辑姓名',
+                },
+                {
                   key: 'password',
                   icon: <KeyOutlined />,
                   label: '修改密码',
@@ -154,7 +173,10 @@ export default function AppLayout() {
                 },
               ],
               onClick: ({ key }) => {
-                if (key === 'password') {
+                if (key === 'editname') {
+                  setEditName(user.display_name || '');
+                  setNameModal(true);
+                } else if (key === 'password') {
                   setPasswordModal(true);
                 } else if (key === 'logout') {
                   localStorage.removeItem('token');
@@ -176,6 +198,23 @@ export default function AppLayout() {
       <Content style={{ margin: '20px 24px', minHeight: 280 }}>
         <Outlet />
       </Content>
+
+      {/* Edit Name Modal */}
+      <Modal
+        title="编辑姓名"
+        open={nameModal}
+        onOk={handleEditName}
+        onCancel={() => setNameModal(false)}
+        okText="保存"
+        cancelText="取消"
+      >
+        <Input
+          value={editName}
+          onChange={e => setEditName(e.target.value)}
+          placeholder="输入显示姓名"
+          style={{ borderRadius: 8 }}
+        />
+      </Modal>
 
       {/* Change Password Modal */}
       <Modal

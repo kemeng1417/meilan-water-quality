@@ -6,6 +6,9 @@ export const login = (username: string, password: string) =>
 
 export const getMe = () => client.get('/auth/me');
 
+export const updateMyDisplayName = (displayName: string) =>
+  client.put('/auth/me/display-name', { display_name: displayName });
+
 export const changePassword = (oldPassword: string, newPassword: string) =>
   client.post('/auth/change-password', { old_password: oldPassword, new_password: newPassword });
 

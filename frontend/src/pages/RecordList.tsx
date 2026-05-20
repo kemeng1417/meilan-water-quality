@@ -57,6 +57,7 @@ export default function RecordList() {
     open: false, id: 0, action: 'approve',
   });
   const [rejectReason, setRejectReason] = useState('');
+  const [reviewerName, setReviewerName] = useState('');
 
   // ── Save filters ──
   const saveFilters = (f: typeof filters) => {
@@ -145,8 +146,9 @@ export default function RecordList() {
 
   // ── Quick review ──
   const handleQuickReview = async () => {
+    if (!reviewerName.trim()) { message.warning('请填写审核人姓名'); return; }
     try {
-      await reviewRecord(reviewModal.id, user.display_name || '审核人');
+      await reviewRecord(reviewModal.id, reviewerName);
       message.success('审核通过');
       setReviewModal({ open: false, id: 0, action: 'approve' });
       setFilters(f => ({ ...f, page: f.page }));
@@ -156,7 +158,7 @@ export default function RecordList() {
   const handleQuickReject = async () => {
     if (!rejectReason.trim()) { message.warning('请输入打回原因'); return; }
     try {
-      await rejectRecord(reviewModal.id, user.display_name || '审核人', rejectReason);
+      await rejectRecord(reviewModal.id, reviewerName || user.display_name || '审核人', rejectReason);
       message.success('已打回');
       setReviewModal({ open: false, id: 0, action: 'reject' });
       setRejectReason('');
@@ -265,7 +267,7 @@ export default function RecordList() {
               <Button type="link" size="small" style={{ color: '#52c41a' }} icon={<CheckOutlined />}
                 onClick={e => {
                   e.stopPropagation();
-                  setReviewModal({ open: true, id: r.id, action: 'approve' });
+                  setReviewModal({ open: true, id: r.id, action: 'approve' }); setReviewerName('');
                 }}>审核</Button>
               <Button type="link" size="small" danger icon={<CloseOutlined />}
                 onClick={e => {
@@ -499,22 +501,37 @@ export default function RecordList() {
         title={reviewModal.action === 'approve' ? '审核通过' : '打回报告'}
         open={reviewModal.open}
         onOk={reviewModal.action === 'approve' ? handleQuickReview : handleQuickReject}
-        onCancel={() => setReviewModal({ open: false, id: 0, action: 'approve' })}
+        onCancel={() => { setReviewModal({ open: false, id: 0, action: 'approve' }); setReviewerName(''); }}
         okText={reviewModal.action === 'approve' ? '确认通过' : '确认打回'}
         cancelText="取消"
         okButtonProps={{ danger: reviewModal.action === 'reject' }}
       >
         {reviewModal.action === 'reject' && (
-          <Input.TextArea
-            value={rejectReason}
-            onChange={e => setRejectReason(e.target.value)}
-            placeholder="请输入打回原因（必填）"
-            rows={3}
-            style={{ marginTop: 8 }}
-          />
+          <>
+            <Input
+              value={reviewerName}
+              onChange={e => setReviewerName(e.target.value)}
+              placeholder="审核人姓名"
+              style={{ marginBottom: 12, borderRadius: 8 }}
+            />
+            <Input.TextArea
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              placeholder="请输入打回原因（必填）"
+              rows={3}
+            />
+          </>
         )}
         {reviewModal.action === 'approve' && (
-          <Typography.Text>确认审核通过此报告？</Typography.Text>
+          <>
+            <Typography.Text>确认审核通过此报告？</Typography.Text>
+            <Input
+              value={reviewerName}
+              onChange={e => setReviewerName(e.target.value)}
+              placeholder="审核人姓名"
+              style={{ marginTop: 12, borderRadius: 8 }}
+            />
+          </>
         )}
       </Modal>
 
