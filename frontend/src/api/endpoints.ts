@@ -6,6 +6,18 @@ export const login = (username: string, password: string) =>
 
 export const getMe = () => client.get('/auth/me');
 
+export const changePassword = (oldPassword: string, newPassword: string) =>
+  client.post('/auth/change-password', { old_password: oldPassword, new_password: newPassword });
+
+// Users (admin)
+export const getUsers = () => client.get('/auth/users');
+
+export const createUser = (data: { username: string; password: string; display_name: string; role: string }) =>
+  client.post('/auth/users', data);
+
+export const updateUser = (id: number, data: Record<string, unknown>) =>
+  client.put(`/auth/users/${id}`, data);
+
 // Water types
 export const getWaterTypes = () => client.get('/water-types');
 

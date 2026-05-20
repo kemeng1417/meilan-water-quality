@@ -164,9 +164,8 @@ def _seed_sample_points(db: Session):
 
 def _seed_users(db: Session):
     users = [
-        {"username": "admin", "password": "admin123", "display_name": "管理员", "role": "admin"},
-        {"username": "zhang", "password": "123456", "display_name": "张化验员", "role": "tester"},
-        {"username": "liwei", "password": "123456", "display_name": "李伟", "role": "reviewer"},
+        {"username": "admin", "password": "admin123", "display_name": "主管", "role": "admin"},
+        {"username": "huayan", "password": "123456", "display_name": "化验员", "role": "tester"},
     ]
     for u in users:
         db.add(User(

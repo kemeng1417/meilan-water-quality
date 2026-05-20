@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Dropdown, Badge, Typography, Avatar, Space } from 'antd';
+import { Layout, Menu, Dropdown, Badge, Typography, Avatar, Space, Modal, Input, message } from 'antd';
 import {
   DashboardOutlined,
   FormOutlined,
@@ -11,38 +12,43 @@ import {
   UserOutlined,
   ExperimentOutlined,
   BellOutlined,
+  TeamOutlined,
+  KeyOutlined,
 } from '@ant-design/icons';
+import { changePassword } from '../api/endpoints';
 
 const { Header, Content } = Layout;
 
-const menuItems = [
-  { key: '/', icon: <DashboardOutlined />, label: '首页看板' },
-  { key: '/records', icon: <UnorderedListOutlined />, label: '检测记录' },
-  { key: '/records/entry', icon: <FormOutlined />, label: '新建报告' },
-  { key: '/trends', icon: <LineChartOutlined />, label: '趋势分析' },
-  { key: '/alerts', icon: <AlertOutlined />, label: '异常管理' },
-  { key: '/points', icon: <EnvironmentOutlined />, label: '采样点管理' },
-];
-
 export default function AppLayout() {
+  const [passwordModal, setPasswordModal] = useState(false);
+  const [oldPwd, setOldPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [pwdLoading, setPwdLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
+  const menuItems = [
+    { key: '/', icon: <DashboardOutlined />, label: '首页看板' },
+    { key: '/records', icon: <UnorderedListOutlined />, label: '检测记录' },
+    { key: '/records/entry', icon: <FormOutlined />, label: '新建报告' },
+    { key: '/trends', icon: <LineChartOutlined />, label: '趋势分析' },
+    { key: '/alerts', icon: <AlertOutlined />, label: '异常管理' },
+    { key: '/points', icon: <EnvironmentOutlined />, label: '采样点管理' },
+    ...(user.role === 'admin' ? [{ key: '/users', icon: <TeamOutlined />, label: '人员管理' }] : []),
+  ];
+
   const pathname = location.pathname;
-  // Match the most specific path prefix
   const getSelectedKey = () => {
     const p = '/' + pathname.split('/').slice(1).join('/');
-    // Exact match first
     if (menuItems.find(m => m.key === p)) return p;
-    // Prefix match for nested routes like /records/:id
     if (p.startsWith('/records')) return '/records';
     return '/';
   };
 
   const selectedKey = getSelectedKey();
 
-  const roleLabel: Record<string, string> = { tester: '化验员', reviewer: '审核人', admin: '管理员' };
+  const roleLabel: Record<string, string> = { tester: '化验员', admin: '主管' };
 
   const handleMenuClick = (key: string) => {
     if (key === '/records/entry') {
@@ -50,6 +56,18 @@ export default function AppLayout() {
     } else {
       navigate(key);
     }
+  };
+
+  const handleChangePwd = async () => {
+    if (!oldPwd || !newPwd) { message.warning('请填写完整'); return; }
+    if (newPwd.length < 3) { message.warning('新密码至少3位'); return; }
+    setPwdLoading(true);
+    try {
+      await changePassword(oldPwd, newPwd);
+      message.success('密码已修改');
+      setPasswordModal(false); setOldPwd(''); setNewPwd('');
+    } catch { message.error('修改失败，请检查原密码'); }
+    finally { setPwdLoading(false); }
   };
 
   return (
@@ -123,6 +141,12 @@ export default function AppLayout() {
                 },
                 { type: 'divider' },
                 {
+                  key: 'password',
+                  icon: <KeyOutlined />,
+                  label: '修改密码',
+                },
+                { type: 'divider' },
+                {
                   key: 'logout',
                   icon: <LogoutOutlined />,
                   label: '退出登录',
@@ -130,7 +154,9 @@ export default function AppLayout() {
                 },
               ],
               onClick: ({ key }) => {
-                if (key === 'logout') {
+                if (key === 'password') {
+                  setPasswordModal(true);
+                } else if (key === 'logout') {
                   localStorage.removeItem('token');
                   localStorage.removeItem('user');
                   navigate('/login');
@@ -150,6 +176,30 @@ export default function AppLayout() {
       <Content style={{ margin: '20px 24px', minHeight: 280 }}>
         <Outlet />
       </Content>
+
+      {/* Change Password Modal */}
+      <Modal
+        title="修改密码"
+        open={passwordModal}
+        onOk={handleChangePwd}
+        onCancel={() => { setPasswordModal(false); setOldPwd(''); setNewPwd(''); }}
+        confirmLoading={pwdLoading}
+        okText="确认修改"
+        cancelText="取消"
+      >
+        <Input.Password
+          value={oldPwd}
+          onChange={e => setOldPwd(e.target.value)}
+          placeholder="原密码"
+          style={{ marginBottom: 12, borderRadius: 8 }}
+        />
+        <Input.Password
+          value={newPwd}
+          onChange={e => setNewPwd(e.target.value)}
+          placeholder="新密码（至少3位）"
+          style={{ borderRadius: 8 }}
+        />
+      </Modal>
     </Layout>
   );
 }

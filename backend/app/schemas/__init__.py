@@ -119,6 +119,7 @@ class TestRecordUpdate(BaseModel):
     tester: Optional[str] = None
     reviewer: Optional[str] = None
     conclusion: Optional[str] = None
+    status: Optional[str] = None
 
 
 class TestRecordOut(BaseModel):

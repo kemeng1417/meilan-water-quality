@@ -331,8 +331,7 @@ export default function DataEntry() {
     if (!record) return;
     await performSave(false);
     try {
-      await updateRecord(record.id, { status: 'submitted' });
-      await updateRecord(record.id, { conclusion });
+      await updateRecord(record.id, { status: 'submitted', conclusion });
       setRecord((prev: any) => ({ ...prev, status: 'submitted' }));
       message.success('已提交审核');
     } catch { message.error('提交失败'); }
@@ -638,7 +637,7 @@ export default function DataEntry() {
   const isDraft = record?.status === 'draft';
   const isRejected = record?.status === 'rejected';
   const isEditable = isDraft || isRejected;
-  const isReviewer = user.role === 'reviewer' || user.role === 'admin';
+  // Anyone can review — just enter name and click
   const abnormalItems = details.filter(d => d.is_abnormal);
   const filledCells = details.filter(d => d.value_text && d.value_text.trim()).length;
   const completedPoints = allPoints.filter(p => getRowStatus(p.sample_point_id) === 'complete').length;
@@ -695,19 +694,15 @@ export default function DataEntry() {
                 <Button type="primary" icon={<SendOutlined />} style={{ borderRadius: 8 }}>重新提交</Button>
               </Popconfirm>
             )}
-            {(isDraft || isRejected) && isReviewer && (
+            {/* Review — anyone can review submitted records */}
+            {(record?.status === 'submitted' || record?.status === 'rejected') && (
               <>
                 <Divider type="vertical" />
-                <Input placeholder="审核人" value={reviewer} onChange={e => setReviewer(e.target.value)} style={{ width: 110, borderRadius: 8 }} />
-                <Button type="primary" onClick={handleReview} icon={<CheckCircleOutlined />} style={{ borderRadius: 8 }}>审核通过</Button>
-              </>
-            )}
-            {record?.status === 'submitted' && isReviewer && (
-              <>
-                <Divider type="vertical" />
-                <Input placeholder="审核人" value={reviewer} onChange={e => setReviewer(e.target.value)} style={{ width: 110, borderRadius: 8 }} />
+                <Input placeholder="审核人姓名" value={reviewer} onChange={e => setReviewer(e.target.value)} style={{ width: 120, borderRadius: 8 }} />
                 <Button type="primary" onClick={handleReview} icon={<CheckCircleOutlined />} style={{ borderRadius: 8, background: '#52c41a', borderColor: '#52c41a' }}>审核通过</Button>
-                <Button danger onClick={handleReject} style={{ borderRadius: 8 }}>打回修改</Button>
+                {record?.status === 'submitted' && (
+                  <Button danger onClick={handleReject} style={{ borderRadius: 8 }}>打回修改</Button>
+                )}
               </>
             )}
             <Dropdown menu={{

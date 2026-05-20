@@ -9,6 +9,7 @@ import RecordList from './pages/RecordList';
 import TrendAnalysis from './pages/TrendAnalysis';
 import AlertManagement from './pages/AlertManagement';
 import PointManagement from './pages/PointManagement';
+import UserManagement from './pages/UserManagement';
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const token = localStorage.getItem('token');
@@ -42,6 +43,7 @@ function App() {
             <Route path="trends" element={<TrendAnalysis />} />
             <Route path="alerts" element={<AlertManagement />} />
             <Route path="points" element={<PointManagement />} />
+            <Route path="users" element={<UserManagement />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
