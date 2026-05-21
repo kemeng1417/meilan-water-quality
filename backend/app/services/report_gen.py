@@ -75,15 +75,15 @@ def generate_word_report(db: Session, record_id: int) -> io.BytesIO:
     ir.font.name = '宋体'
     ir.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
 
-    # ── 表格（序号+采样点+9指标 = 11列，不再有"标准"列） ──
-    cols = 2 + len(indicators)
+    # ── 表格（序号+采样点+N指标+结论） ──
+    cols = 3 + len(indicators)
     table = doc.add_table(rows=2 + len(sample_points), cols=cols)
     table.style = 'Table Grid'
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = True
 
     # 列宽设置
-    widths = [Cm(0.7), Cm(3.5)] + [Cm(2.0)] * len(indicators)
+    widths = [Cm(0.7), Cm(3.5)] + [Cm(2.0)] * len(indicators) + [Cm(1.5)]
 
     def _set_cell(cell, text, font_size=12, bold=False, bg=None, color=None):
         cell.text = ''
@@ -112,6 +112,7 @@ def generate_word_report(db: Session, record_id: int) -> io.BytesIO:
     for i, ind in enumerate(indicators):
         txt = f"{ind.name}\n({ind.unit})" if ind.unit else ind.name
         _set_cell(table.rows[0].cells[2 + i], txt, 10, True, hdr_bg)
+    _set_cell(table.rows[0].cells[2 + len(indicators)], '结论', 12, True, hdr_bg)
 
     # ── 标准参考行 ──
     _set_cell(table.rows[1].cells[0], '', 10, False, 'F0F5FA')
@@ -121,6 +122,7 @@ def generate_word_report(db: Session, record_id: int) -> io.BytesIO:
         lim2 = limits_2.get(ind.id) if limits_2 else None
         txt = _fmt_limit_short(ind, lim, lim2)
         _set_cell(table.rows[1].cells[2 + i], txt, 9, False, 'F0F5FA')
+    _set_cell(table.rows[1].cells[2 + len(indicators)], '', 10, False, 'F0F5FA')
 
     # ── 数据行 ──
     for r, sp in enumerate(sample_points):
@@ -128,9 +130,13 @@ def generate_word_report(db: Session, record_id: int) -> io.BytesIO:
         _set_cell(row.cells[0], str(r + 1), 12)
         _set_cell(row.cells[1], sp.name, 12)
 
+        pt_details = matrix.get(sp.id, {})
+        has_abnormal = any(d.is_abnormal for d in pt_details.values())
+        all_filled = bool(pt_details) and all(d.value_text for d in pt_details.values())
+
         for i, ind in enumerate(indicators):
             cell = row.cells[2 + i]
-            detail = matrix.get(sp.id, {}).get(ind.id)
+            detail = pt_details.get(ind.id)
             if detail and detail.value_text:
                 is_fail = detail.is_qualified is False
                 bg = 'FCE4D6' if is_fail else ('E2EFDA' if detail.is_qualified else None)
@@ -138,6 +144,15 @@ def generate_word_report(db: Session, record_id: int) -> io.BytesIO:
                 _set_cell(cell, detail.value_text, 12, is_fail, bg, color)
             else:
                 _set_cell(cell, '—', 12, False, None, None)
+
+        # 结论列
+        conc_col_idx = 2 + len(indicators)
+        if has_abnormal:
+            _set_cell(row.cells[conc_col_idx], '不合格', 12, True, 'FCE4D6', RGBColor(0xFF, 0x00, 0x00))
+        elif all_filled:
+            _set_cell(row.cells[conc_col_idx], '合格', 12, False, 'E2EFDA', RGBColor(0x16, 0xA3, 0x4A))
+        else:
+            _set_cell(row.cells[conc_col_idx], '—', 12, False, None, None)
 
     # ── 异常汇总 ──
     abnormal_items = [d for d in details if d.is_abnormal]
@@ -158,6 +173,14 @@ def generate_word_report(db: Session, record_id: int) -> io.BytesIO:
     cr.font.size = Pt(12)
     cr.font.name = '宋体'
     cr.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+
+    # ── 签名 ──
+    sig = doc.add_paragraph()
+    sig.paragraph_format.space_before = Pt(16)
+    sr = sig.add_run(f"化验员：{record.tester}              审核人：{record.reviewer or '___________'}              日期：{record.report_date}")
+    sr.font.size = Pt(12)
+    sr.font.name = '宋体'
+    sr.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
 
     # ── 照片 ──
     photos = db.query(Photo).filter(Photo.record_id == record_id).all()
@@ -195,14 +218,6 @@ def generate_word_report(db: Session, record_id: int) -> io.BytesIO:
                         last_paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
                     except Exception:
                         doc.add_paragraph(f"[照片: {p.original_name}]")
-
-    # ── 签名 ──
-    sig = doc.add_paragraph()
-    sig.paragraph_format.space_before = Pt(16)
-    sr = sig.add_run(f"化验员：{record.tester}              审核人：{record.reviewer or '___________'}              日期：{record.report_date}")
-    sr.font.size = Pt(12)
-    sr.font.name = '宋体'
-    sr.element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -265,6 +280,7 @@ def generate_html_report(db: Session, record_id: int) -> str:
     for ind in indicators:
         txt = f"{ind.name}<br>({ind.unit})" if ind.unit else ind.name
         header_cells += f"<th>{txt}</th>"
+    header_cells += "<th>结论</th>"
 
     # ── 标准参考行 ──
     limit_cells = ""
@@ -273,18 +289,29 @@ def generate_html_report(db: Session, record_id: int) -> str:
         lim2 = limits_2.get(ind.id) if limits_2 else None
         txt = _fmt_limit_short(ind, lim, lim2)
         limit_cells += f"<td class='limit'>{txt}</td>"
+    limit_cells += "<td class='limit'></td>"
 
     # ── 数据行 ──
     data_rows = ""
     for r, sp in enumerate(sample_points):
         cells = f"<td>{r + 1}</td><td class='point-name'>{sp.name}</td>"
+        pt_details = matrix.get(sp.id, {})
+        has_abnormal = any(d.is_abnormal for d in pt_details.values())
+        all_filled = bool(pt_details) and all(d.value_text for d in pt_details.values())
         for ind in indicators:
-            detail = matrix.get(sp.id, {}).get(ind.id)
+            detail = pt_details.get(ind.id)
             if detail and detail.value_text:
                 cls = 'fail' if detail.is_qualified is False else ('pass' if detail.is_qualified is True else '')
                 cells += f"<td class='{cls}'>{detail.value_text}</td>"
             else:
                 cells += f"<td class='empty'>—</td>"
+        # 结论列
+        if has_abnormal:
+            cells += "<td class='fail'>不合格</td>"
+        elif all_filled:
+            cells += "<td class='pass'>合格</td>"
+        else:
+            cells += "<td class='empty'>—</td>"
         data_rows += f"<tr>{cells}</tr>"
 
     # ── 结论 ──
@@ -378,8 +405,8 @@ def generate_html_report(db: Session, record_id: int) -> str:
 </tbody>
 </table>
 <p class="conclusion {conc_cls}">{conc_html}</p>
-{photos_html}
 <p class="signature">化验员：{record.tester} &emsp;&emsp;&emsp;&emsp; 审核人：{record.reviewer or '___________'} &emsp;&emsp;&emsp;&emsp; 日期：{record.report_date}</p>
+{photos_html}
 </body>
 </html>"""
     return html

@@ -69,7 +69,7 @@ def export_excel(record_id: int, db: Session = Depends(get_db)):
     )
     center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    total_cols = 2 + len(indicators)  # 序号 + 采样点 + N指标
+    total_cols = 3 + len(indicators)  # 序号 + 采样点 + N指标 + 结论
 
     # ── 标题 ──
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
@@ -99,6 +99,7 @@ def export_excel(record_id: int, db: Session = Depends(get_db)):
     for i, ind in enumerate(indicators):
         txt = f"{ind.name}\n({ind.unit})" if ind.unit else ind.name
         ws.cell(row=header_row, column=3 + i, value=txt)
+    ws.cell(row=header_row, column=3 + len(indicators), value="结论")
 
     # ── 标准参考行 ──
     limit_row = header_row + 1
@@ -116,6 +117,7 @@ def export_excel(record_id: int, db: Session = Depends(get_db)):
         lim2 = limits_2.get(ind.id) if limits_2 else None
         txt = _fmt_limit_short(ind, lim, lim2)
         ws.cell(row=limit_row, column=3 + i, value=txt)
+    ws.cell(row=limit_row, column=3 + len(indicators), value="")
 
     # ── 数据行 ──
     for r, pt in enumerate(points):
@@ -127,10 +129,14 @@ def export_excel(record_id: int, db: Session = Depends(get_db)):
         ws.cell(row=row, column=1, value=r + 1).font = normal_font
         ws.cell(row=row, column=2, value=pt.name).font = normal_font
 
+        pt_details = matrix.get(pt.id, {})
+        has_abnormal = any(d.is_abnormal for d in pt_details.values())
+        all_filled = all(d.value_text for d in pt_details.values()) if pt_details else False
+
         for i, ind in enumerate(indicators):
             col = 3 + i
             cell = ws.cell(row=row, column=col)
-            detail = matrix.get(pt.id, {}).get(ind.id)
+            detail = pt_details.get(ind.id)
             if detail and detail.value_text:
                 cell.value = detail.value_text
                 if detail.is_qualified is False:
@@ -145,11 +151,28 @@ def export_excel(record_id: int, db: Session = Depends(get_db)):
                 cell.value = "—"
                 cell.font = normal_font
 
+        # 结论列
+        conc_col = 3 + len(indicators)
+        conc_cell = ws.cell(row=row, column=conc_col)
+        if has_abnormal:
+            conc_cell.value = "不合格"
+            conc_cell.font = red_font
+            conc_cell.fill = fail_fill
+        elif all_filled:
+            conc_cell.value = "合格"
+            conc_cell.font = Font(name="宋体", size=10, color="16A34A")
+            conc_cell.fill = pass_fill
+        else:
+            conc_cell.value = "—"
+            conc_cell.font = normal_font
+        conc_cell.alignment = center_align
+
     # ── 列宽 ──
     ws.column_dimensions['A'].width = 5
     ws.column_dimensions['B'].width = 30
     for i in range(len(indicators)):
         ws.column_dimensions[get_column_letter(3 + i)].width = 13
+    ws.column_dimensions[get_column_letter(3 + len(indicators))].width = 10
     ws.row_dimensions[limit_row].height = 20
 
     # ── 异常汇总 ──

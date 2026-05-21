@@ -78,6 +78,8 @@ export default function DataEntry() {
   const [pasteText, setPasteText] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [photos, setPhotos] = useState<Record<number, any[]>>({});
+  const [previewImage, setPreviewImage] = useState<string>('');
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [abnormalExpanded, setAbnormalExpanded] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'unsaved'>('idle');
   const [lastSaved, setLastSaved] = useState<string>('');
@@ -271,13 +273,16 @@ export default function DataEntry() {
     input.onchange = async () => {
       if (!input.files || !record) return;
       const files = Array.from(input.files);
+      let ok = 0;
       for (let i = 0; i < files.length; i++) {
         try {
           message.loading({ content: `上传照片 ${i + 1}/${files.length}...`, key: 'upload', duration: 0 });
           await uploadPhoto(record.id, samplePointId, files[i]);
+          ok++;
         } catch { message.error({ content: `照片 ${i + 1} 上传失败`, key: 'upload' }); }
       }
-      message.success({ content: `已上传 ${files.length} 张照片`, key: 'upload' });
+      if (ok > 0) message.success({ content: `已上传 ${ok}${ok < files.length ? `/${files.length}` : ''} 张照片`, key: 'upload' });
+      else message.error({ content: '上传失败', key: 'upload' });
       loadPhotos();
       input.value = '';
     };
@@ -640,6 +645,23 @@ export default function DataEntry() {
       render: (v: string) => <Typography.Text code style={{ fontSize: 11 }}>{v}</Typography.Text>,
     },
     ...indicatorColumns,
+    {
+      title: '结论', width: 90, align: 'center' as const, fixed: 'right' as const,
+      render: (_: any, r: any) => {
+        if (r.sample_point_id === -1) return null;
+        const status = getRowStatus(r.sample_point_id);
+        if (status === 'complete') {
+          return <Tag color="success" style={{ borderRadius: 6, margin: 0 }}>合格</Tag>;
+        }
+        if (status === 'abnormal') {
+          return <Tag color="error" style={{ borderRadius: 6, margin: 0 }}>不合格</Tag>;
+        }
+        if (status === 'partial') {
+          return <Tag color="warning" style={{ borderRadius: 6, margin: 0 }}>待完成</Tag>;
+        }
+        return <Tag style={{ borderRadius: 6, margin: 0, color: '#c0c0c0' }}>未填报</Tag>;
+      },
+    },
   ];
 
   // ── Standard limit reference row (inserted as first data row) ──
@@ -1043,17 +1065,29 @@ export default function DataEntry() {
                                 </Tag>
                               ))}
                             </div>
-                            <Space size={6}>
+                            <Space size={6} align="center">
                               {pointPhotos.map(p => (
-                                <Tooltip key={p.id} title={
-                                  <img src={p.url} alt="" style={{ maxWidth: 200, maxHeight: 150, borderRadius: 4 }} />
-                                }>
-                                  <Tag color="processing" style={{ borderRadius: 4, cursor: 'pointer' }}>
-                                    <PictureOutlined style={{ marginRight: 4 }} />照片
-                                    <DeleteOutlined style={{ marginLeft: 4, fontSize: 10 }}
-                                      onClick={e => { e.stopPropagation(); handleDeletePhoto(p.id); }} />
-                                  </Tag>
-                                </Tooltip>
+                                <div key={p.id} style={{ position: 'relative', display: 'inline-block' }}>
+                                  <img
+                                    src={p.url}
+                                    alt={p.original_name || ''}
+                                    style={{
+                                      width: 48, height: 48, objectFit: 'cover',
+                                      borderRadius: 6, cursor: 'pointer', border: '1px solid #e8ecf1',
+                                    }}
+                                    onClick={() => { setPreviewImage(p.url); setPreviewOpen(true); }}
+                                  />
+                                  {isEditable && (
+                                    <DeleteOutlined
+                                      style={{
+                                        position: 'absolute', top: -6, right: -6,
+                                        fontSize: 12, color: '#ff4d4f', cursor: 'pointer',
+                                        background: '#fff', borderRadius: '50%', padding: 2,
+                                      }}
+                                      onClick={e => { e.stopPropagation(); handleDeletePhoto(p.id); }}
+                                    />
+                                  )}
+                                </div>
                               ))}
                               {isEditable && (
                                 <Button size="small" type="dashed" icon={<CameraOutlined />}
@@ -1090,7 +1124,7 @@ export default function DataEntry() {
                 : [limitRow, ...visiblePoints.map(p => ({ ...p, key: String(p.sample_point_id) }))]
             }
             pagination={false}
-            scroll={{ x: 250 + indicators.length * 120, y: 'calc(100vh - 480px)' }}
+            scroll={{ x: 350 + indicators.length * 120, y: 'calc(100vh - 480px)' }}
             size="small"
             bordered
             rowClassName={(r: any) => {
@@ -1165,9 +1199,148 @@ export default function DataEntry() {
               />
             </div>
           )}
+
+          {/* 签名行 */}
+          {record && (
+            <div style={{ marginTop: 16, fontSize: 13, color: '#475569' }}>
+              <span>化验员：{record.tester}</span>
+              <span style={{ margin: '0 32px' }}></span>
+              <span>审核人：{record.reviewer || '___________'}</span>
+              <span style={{ margin: '0 32px' }}></span>
+              <span>日期：{record.report_date}</span>
+            </div>
+          )}
+
+          {/* 现场照片 — visible for all records */}
+          {record && (
+            <div style={{ marginTop: 24 }}>
+              <Divider style={{ margin: '0 0 12px 0' }} />
+              <Space style={{ marginBottom: 12 }}>
+                <PictureOutlined style={{ fontSize: 16, color: '#1677ff' }} />
+                <Typography.Text strong style={{ fontSize: 14 }}>现场照片</Typography.Text>
+                {(() => {
+                  const total = Object.values(photos).flat().length;
+                  return total > 0 ? <Tag style={{ borderRadius: 10 }}>{total} 张</Tag> : null;
+                })()}
+              </Space>
+
+              {(() => {
+                const allPhotoEntries = Object.entries(photos);
+                const hasAnyPhotos = allPhotoEntries.some(([, arr]) => arr.length > 0);
+                const ptsWithPhotos = allPhotoEntries.filter(([, arr]) => arr.length > 0);
+                const ptsEditable = isEditable ? allPoints.filter(p => !ptsWithPhotos.some(([spId]) => parseInt(spId) === p.sample_point_id)) : [];
+
+                if (!hasAnyPhotos && !isEditable) {
+                  return <Typography.Text type="secondary" style={{ fontSize: 12 }}>暂无现场照片</Typography.Text>;
+                }
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {/* Points with photos */}
+                    {ptsWithPhotos.map(([spId, ptPhotos]) => {
+                      const spName = allPoints.find(p => p.sample_point_id === parseInt(spId))?.sample_point_name || `点位${spId}`;
+                      return (
+                        <div key={spId} style={{
+                          padding: '10px 14px', background: '#f8fafc',
+                          borderRadius: 10, border: '1px solid #e8ecf1',
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <Typography.Text strong style={{ fontSize: 13 }}>{spName}</Typography.Text>
+                            {isEditable && (
+                              <Button size="small" type="dashed" icon={<CameraOutlined />}
+                                onClick={() => handleUploadPhoto(parseInt(spId))}
+                                style={{ borderRadius: 6, fontSize: 11 }}>拍照</Button>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                            {ptPhotos.map((p: any) => (
+                              <div key={p.id} style={{ position: 'relative', display: 'inline-block' }}>
+                                <img
+                                  src={p.url}
+                                  alt={p.original_name || ''}
+                                  style={{
+                                    width: 96, height: 72, objectFit: 'cover',
+                                    borderRadius: 8, cursor: 'pointer', border: '1px solid #e8ecf1',
+                                    transition: 'transform 0.15s',
+                                  }}
+                                  onMouseEnter={e => { (e.target as HTMLElement).style.transform = 'scale(1.05)'; }}
+                                  onMouseLeave={e => { (e.target as HTMLElement).style.transform = 'scale(1)'; }}
+                                  onClick={() => { setPreviewImage(p.url); setPreviewOpen(true); }}
+                                />
+                                {isEditable && (
+                                  <DeleteOutlined
+                                    style={{
+                                      position: 'absolute', top: -6, right: -6,
+                                      fontSize: 12, color: '#ff4d4f', cursor: 'pointer',
+                                      background: '#fff', borderRadius: '50%', padding: 2,
+                                      boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+                                    }}
+                                    onClick={e => { e.stopPropagation(); handleDeletePhoto(p.id); }}
+                                  />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {/* Points without photos (editable) — compact upload row */}
+                    {ptsEditable.length > 0 && hasAnyPhotos && (
+                      <div style={{
+                        padding: '6px 14px', borderRadius: 10, border: '1px dashed #d9d9d9',
+                        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                      }}>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>其他点位：</Typography.Text>
+                        {ptsEditable.map(p => (
+                          <Button key={p.sample_point_id} size="small" icon={<CameraOutlined />}
+                            onClick={() => handleUploadPhoto(p.sample_point_id)}
+                            style={{ borderRadius: 6, fontSize: 11 }}>{p.sample_point_name}</Button>
+                        ))}
+                      </div>
+                    )}
+                    {/* Empty state when no photos at all but editable */}
+                    {!hasAnyPhotos && isEditable && (
+                      <div style={{
+                        padding: '24px 0', textAlign: 'center',
+                        background: '#fafafa', borderRadius: 10, border: '1px dashed #d9d9d9',
+                      }}>
+                        <Typography.Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
+                          暂无现场照片，请选择采样点上传
+                        </Typography.Text>
+                        <Space wrap style={{ justifyContent: 'center' }}>
+                          {allPoints.slice(0, 8).map(p => (
+                            <Button key={p.sample_point_id} size="small" icon={<CameraOutlined />}
+                              onClick={() => handleUploadPhoto(p.sample_point_id)}
+                              style={{ borderRadius: 6 }}>{p.sample_point_name}</Button>
+                          ))}
+                          {allPoints.length > 8 && (
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              ...等 {allPoints.length} 个点位
+                            </Typography.Text>
+                          )}
+                        </Space>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </Card>
         </div>
       )}
+
+      {/* Image Preview Modal */}
+      <Modal
+        open={previewOpen}
+        footer={null}
+        onCancel={() => { setPreviewOpen(false); setPreviewImage(''); }}
+        width="auto"
+        style={{ maxWidth: '90vw', top: 20 }}
+        styles={{ body: { padding: 8, display: 'flex', justifyContent: 'center' } }}
+      >
+        <img src={previewImage} alt="" style={{ maxWidth: '85vw', maxHeight: '80vh', objectFit: 'contain', borderRadius: 8 }} />
+      </Modal>
 
       {/* Batch Paste Modal */}
       <Modal
