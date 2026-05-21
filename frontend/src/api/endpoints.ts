@@ -62,6 +62,12 @@ export const updateRecord = (id: number, data: Record<string, unknown>) =>
 
 export const deleteRecord = (id: number) => client.delete(`/records/${id}`);
 
+export const removePointFromRecord = (recordId: number, samplePointId: number) =>
+  client.delete(`/records/${recordId}/points/${samplePointId}`);
+
+export const addPointToRecord = (recordId: number, samplePointId: number) =>
+  client.post(`/records/${recordId}/points`, null, { params: { sample_point_id: samplePointId } });
+
 export const batchDeleteRecords = (ids: number[]) =>
   client.post('/records/batch-delete', ids);
 

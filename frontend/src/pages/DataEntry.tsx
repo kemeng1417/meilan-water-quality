@@ -20,6 +20,7 @@ import {
   createRecord, getRecord, getDetails, saveDetails, reviewRecord, updateRecord,
   exportWord, exportExcel, exportHtml, exportPdf, getLatestData, rejectRecord,
   getSamplePoints, uploadPhoto, getPhotos, deletePhoto,
+  removePointFromRecord, addPointToRecord,
 } from '../api/endpoints';
 import { AREA_COLORS, STATUS_MAP } from '../theme/tokens';
 
@@ -86,6 +87,8 @@ export default function DataEntry() {
   const [hasLatestData, setHasLatestData] = useState(false);
   const [recordInfoExpanded, setRecordInfoExpanded] = useState(false);
   const [legendExpanded, setLegendExpanded] = useState(false);
+  const [addPointModalOpen, setAddPointModalOpen] = useState(false);
+  const [allActivePoints, setAllActivePoints] = useState<any[]>([]);
   const autoSaveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const undoStack = useRef<DetailRow[][]>([]);
@@ -294,6 +297,44 @@ export default function DataEntry() {
       await deletePhoto(photoId);
       loadPhotos();
     } catch { message.error('删除失败'); }
+  };
+
+  const handleDeleteRow = async (samplePointId: number) => {
+    if (!record) return;
+    const ptName = allPoints.find(p => p.sample_point_id === samplePointId)?.sample_point_name || '';
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要从本报告中移除「${ptName}」吗？该点位的全部检测数据和照片将被删除。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await removePointFromRecord(record.id, samplePointId);
+          setDetails(prev => prev.filter(d => d.sample_point_id !== samplePointId));
+          setPhotos(prev => { const n = { ...prev }; delete n[samplePointId]; return n; });
+          message.success('已移除');
+        } catch { message.error('删除失败'); }
+      },
+    });
+  };
+
+  const handleAddPoint = async (samplePointId: number) => {
+    if (!record) return;
+    try {
+      const res = await addPointToRecord(record.id, samplePointId);
+      const pt = res.data;
+      const newDetails: DetailRow[] = indicators.map(ind => ({
+        id: 0, sample_point_id: samplePointId, sample_point_name: pt.sample_point_name,
+        sample_point_code: pt.sample_point_code || '', sample_point_area: pt.sample_point_area || '',
+        indicator_id: ind.id, indicator_name: ind.name, indicator_unit: ind.unit,
+        indicator_type: ind.value_type, value_text: null, value_num: null,
+        is_qualified: null, is_abnormal: false,
+      }));
+      setDetails(prev => [...prev, ...newDetails]);
+      setAddPointModalOpen(false);
+      message.success(`已添加「${pt.sample_point_name}」`);
+    } catch { message.error('添加失败'); }
   };
 
   const updateCell = (samplePointId: number, indicatorId: number, value: string) => {
@@ -650,16 +691,27 @@ export default function DataEntry() {
       render: (_: any, r: any) => {
         if (r.sample_point_id === -1) return null;
         const status = getRowStatus(r.sample_point_id);
+        let tag;
         if (status === 'complete') {
-          return <Tag color="success" style={{ borderRadius: 6, margin: 0 }}>合格</Tag>;
+          tag = <Tag color="success" style={{ borderRadius: 6, margin: 0 }}>合格</Tag>;
+        } else if (status === 'abnormal') {
+          tag = <Tag color="error" style={{ borderRadius: 6, margin: 0 }}>不合格</Tag>;
+        } else if (status === 'partial') {
+          tag = <Tag color="warning" style={{ borderRadius: 6, margin: 0 }}>待完成</Tag>;
+        } else {
+          tag = <Tag style={{ borderRadius: 6, margin: 0, color: '#c0c0c0' }}>未填报</Tag>;
         }
-        if (status === 'abnormal') {
-          return <Tag color="error" style={{ borderRadius: 6, margin: 0 }}>不合格</Tag>;
-        }
-        if (status === 'partial') {
-          return <Tag color="warning" style={{ borderRadius: 6, margin: 0 }}>待完成</Tag>;
-        }
-        return <Tag style={{ borderRadius: 6, margin: 0, color: '#c0c0c0' }}>未填报</Tag>;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+            {tag}
+            {isEditable && (
+              <DeleteOutlined
+                style={{ fontSize: 11, color: '#94a3b8', cursor: 'pointer' }}
+                onClick={e => { e.stopPropagation(); handleDeleteRow(r.sample_point_id); }}
+              />
+            )}
+          </div>
+        );
       },
     },
   ];
@@ -725,6 +777,13 @@ export default function DataEntry() {
                 <Button icon={<SaveOutlined />} loading={saving} onClick={handleSave} style={{ borderRadius: 8 }}>保存</Button>
                 <Tooltip title={hasLatestData ? '复制最近一次同类型报告数据' : '暂无历史数据'}><Button icon={<CopyOutlined />} onClick={handleCopyLast} disabled={!hasLatestData} style={{ borderRadius: 8 }}>复制上日</Button></Tooltip>
                 <Button icon={<SwapOutlined />} onClick={() => setPasteModalOpen(true)} style={{ borderRadius: 8 }}>批量粘贴</Button>
+                <Button icon={<PlusOutlined />} onClick={() => {
+                  // Load all active points for this water type (not just current points)
+                  getSamplePoints(record?.water_type_id || selectedWt, null).then(res => {
+                    setAllActivePoints(res.data.filter((p: any) => !allPoints.some(ap => ap.sample_point_id === p.id)));
+                    setAddPointModalOpen(true);
+                  });
+                }} style={{ borderRadius: 8 }}>添加点位</Button>
                 <Popconfirm title="提交后将无法修改，确认提交？" onConfirm={handleSubmit} okText="确认提交" cancelText="取消">
                   <Button type="primary" icon={<SendOutlined />} style={{ borderRadius: 8, background: 'linear-gradient(135deg, #0e7490, #0891b2)', border: 'none' }}>提交审核</Button>
                 </Popconfirm>
@@ -1340,6 +1399,42 @@ export default function DataEntry() {
         styles={{ body: { padding: 8, display: 'flex', justifyContent: 'center' } }}
       >
         <img src={previewImage} alt="" style={{ maxWidth: '85vw', maxHeight: '80vh', objectFit: 'contain', borderRadius: 8 }} />
+      </Modal>
+
+      {/* Add Point Modal */}
+      <Modal
+        title="添加采样点"
+        open={addPointModalOpen}
+        onCancel={() => setAddPointModalOpen(false)}
+        footer={null}
+        width={500}
+      >
+        {allActivePoints.length === 0 ? (
+          <Typography.Text type="secondary">当前水样类型下没有更多可用采样点</Typography.Text>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 400, overflow: 'auto' }}>
+            {allActivePoints.map((p: any) => (
+              <div key={p.id} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '8px 12px', borderRadius: 8, border: '1px solid #e8ecf1',
+                cursor: 'pointer', transition: 'background 0.15s',
+              }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#f0f9ff')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                onClick={() => handleAddPoint(p.id)}
+              >
+                <div>
+                  <Typography.Text strong style={{ fontSize: 13 }}>{p.name}</Typography.Text>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                    {p.area && <Tag color={AREA_COLORS[p.area] || 'default'} style={{ borderRadius: 4, fontSize: 10, marginRight: 6 }}>{p.area}</Tag>}
+                    {p.code && <Typography.Text code style={{ fontSize: 10 }}>{p.code}</Typography.Text>}
+                  </div>
+                </div>
+                <PlusOutlined style={{ color: '#1677ff' }} />
+              </div>
+            ))}
+          </div>
+        )}
       </Modal>
 
       {/* Batch Paste Modal */}

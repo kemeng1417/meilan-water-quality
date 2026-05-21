@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import TestRecord, TestDetail, SamplePoint, Indicator, WaterType, AlertRecord
+from app.models import TestRecord, TestDetail, SamplePoint, Indicator, WaterType, AlertRecord, Photo
 from app.schemas import (
     TestRecordCreate, TestRecordUpdate, TestRecordOut,
     TestDetailOut, TestDetailUpdate,
@@ -348,6 +348,59 @@ def batch_delete_records(ids: list[int], db: Session = Depends(get_db)):
         db.delete(r)
     db.commit()
     return {"success": True, "deleted": len(records)}
+
+
+@router.delete("/{record_id}/points/{sample_point_id}")
+def remove_point_from_record(record_id: int, sample_point_id: int, db: Session = Depends(get_db)):
+    """从记录中移除一个采样点及其全部明细"""
+    record = db.query(TestRecord).filter(TestRecord.id == record_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    if record.status not in ("draft", "rejected"):
+        raise HTTPException(status_code=400, detail="仅草稿或已打回状态可修改")
+    deleted = db.query(TestDetail).filter(
+        TestDetail.record_id == record_id,
+        TestDetail.sample_point_id == sample_point_id,
+    ).delete()
+    # Also remove associated photos
+    db.query(Photo).filter(
+        Photo.record_id == record_id,
+        Photo.sample_point_id == sample_point_id,
+    ).delete()
+    db.commit()
+    return {"success": True, "deleted": deleted}
+
+
+@router.post("/{record_id}/points")
+def add_point_to_record(record_id: int, sample_point_id: int = Query(...), db: Session = Depends(get_db)):
+    """向记录中添加一个采样点（含全部指标明细）"""
+    record = db.query(TestRecord).filter(TestRecord.id == record_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    if record.status not in ("draft", "rejected"):
+        raise HTTPException(status_code=400, detail="仅草稿或已打回状态可修改")
+
+    point = db.query(SamplePoint).filter(SamplePoint.id == sample_point_id, SamplePoint.is_active == True).first()
+    if not point:
+        raise HTTPException(status_code=404, detail="采样点不存在或已停用")
+
+    existing = db.query(TestDetail).filter(
+        TestDetail.record_id == record_id,
+        TestDetail.sample_point_id == sample_point_id,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="该采样点已存在于本记录中")
+
+    indicators = db.query(Indicator).order_by(Indicator.display_order).all()
+    for ind in indicators:
+        db.add(TestDetail(
+            record_id=record_id,
+            sample_point_id=sample_point_id,
+            indicator_id=ind.id,
+        ))
+
+    db.commit()
+    return {"success": True, "sample_point_name": point.name, "sample_point_area": point.area or "", "sample_point_code": point.code or ""}
 
 
 @router.get("/dashboard/summary")
