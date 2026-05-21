@@ -117,6 +117,15 @@ export const getPhotos = (recordId: number, samplePointId?: number) =>
 export const deletePhoto = (photoId: number) =>
   client.delete(`/photos/${photoId}`);
 
+// OCR
+export const ocrRecognize = (file: File) => {
+  const form = new FormData();
+  form.append('file', file);
+  return client.post('/ocr/recognize', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
 // Export
 export const exportWord = (recordId: number) =>
   client.get(`/export/${recordId}/word`, { responseType: 'blob' });

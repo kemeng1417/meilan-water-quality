@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from app.config import FRONTEND_DIR
 from app.database import engine, Base
-from app.routers import auth, indicators, records, alerts, trends, export, photos
+from app.routers import auth, indicators, records, alerts, trends, export, photos, ocr
 
 
 @asynccontextmanager
@@ -35,6 +35,7 @@ app.include_router(alerts.router)
 app.include_router(trends.router)
 app.include_router(export.router)
 app.include_router(photos.router)
+app.include_router(ocr.router)
 
 frontend_dist = Path(FRONTEND_DIR) if FRONTEND_DIR else None
 

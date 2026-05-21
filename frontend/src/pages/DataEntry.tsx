@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import {
   Card, Select, DatePicker, Input, Button, Table, message,
   Space, Typography, Tag, Descriptions, Popconfirm, Tooltip, Divider,
-  Breadcrumb, Progress, Dropdown, Checkbox, Tabs, Modal, Radio,
+  Breadcrumb, Progress, Dropdown, Checkbox, Tabs, Modal, Radio, Spin,
 } from 'antd';
 import {
   SaveOutlined, SendOutlined, DownloadOutlined,
@@ -20,7 +20,7 @@ import {
   createRecord, getRecord, getDetails, saveDetails, reviewRecord, updateRecord,
   exportWord, exportExcel, exportHtml, exportPdf, getLatestData, rejectRecord,
   getSamplePoints, uploadPhoto, getPhotos, deletePhoto,
-  removePointFromRecord, addPointToRecord,
+  removePointFromRecord, addPointToRecord, ocrRecognize,
 } from '../api/endpoints';
 import { AREA_COLORS, STATUS_MAP } from '../theme/tokens';
 
@@ -89,6 +89,11 @@ export default function DataEntry() {
   const [legendExpanded, setLegendExpanded] = useState(false);
   const [addPointModalOpen, setAddPointModalOpen] = useState(false);
   const [allActivePoints, setAllActivePoints] = useState<any[]>([]);
+  const [ocrModalOpen, setOcrModalOpen] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrResult, setOcrResult] = useState<Record<string, Record<string, string>> | null>(null);
+  const [ocrEditedResult, setOcrEditedResult] = useState<Record<string, Record<string, string>> | null>(null);
+  const [ocrError, setOcrError] = useState('');
   const autoSaveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const undoStack = useRef<DetailRow[][]>([]);
@@ -335,6 +340,121 @@ export default function DataEntry() {
       setAddPointModalOpen(false);
       message.success(`已添加「${pt.sample_point_name}」`);
     } catch { message.error('添加失败'); }
+  };
+
+  // Normalize indicator name for fuzzy matching
+  const normalizeName = (name: string) => {
+    return name
+      .replace(/\(.*?\)/g, '')
+      .replace(/（.*?）/g, '')
+      .replace(/值$/, '')
+      .replace(/\s+/g, '')
+      .toLowerCase();
+  };
+
+  const handleOcrRecognize = async () => {
+    if (!ocrInputRef.current) {
+      ocrInputRef.current = document.createElement('input');
+      ocrInputRef.current.type = 'file';
+      ocrInputRef.current.accept = 'image/*';
+      ocrInputRef.current.setAttribute('capture', 'environment');
+    }
+    const input = ocrInputRef.current;
+    input.onchange = async () => {
+      if (!input.files || !input.files[0]) return;
+      const file = input.files[0];
+      setOcrModalOpen(true);
+      setOcrLoading(true);
+      setOcrResult(null);
+      setOcrEditedResult(null);
+      setOcrError('');
+      try {
+        const res = await ocrRecognize(file);
+        if (res.data.success) {
+          // Remap OCR indicator keys to match database indicator names
+          const rawData = res.data.data;
+          const remapped: Record<string, Record<string, string>> = {};
+          for (const [ptName, values] of Object.entries(rawData)) {
+            const newValues: Record<string, string> = {};
+            const rawValMap = values as Record<string, string>;
+            for (const [key, val] of Object.entries(rawValMap)) {
+              // Find matching DB indicator name
+              const dbInd = indicators.find(ind => normalizeName(ind.name) === normalizeName(key));
+              const mappedKey = dbInd ? dbInd.name : key;
+              newValues[mappedKey] = val as string;
+            }
+            remapped[ptName] = newValues;
+          }
+          setOcrResult(remapped);
+          setOcrEditedResult(remapped);
+        } else {
+          setOcrError(res.data.error || '识别失败');
+        }
+      } catch (e: any) {
+        setOcrError(e?.response?.data?.detail || e?.message || '识别请求失败，请重试');
+      } finally {
+        setOcrLoading(false);
+        input.value = '';
+      }
+    };
+    input.click();
+  };
+
+  const handleOcrFill = () => {
+    if (!ocrEditedResult) return;
+    let filled = 0;
+    setDetails(prev => {
+      undoStack.current.push(prev);
+      if (undoStack.current.length > 50) undoStack.current.shift();
+      redoStack.current = [];
+      // Build normalized index for OCR result keys
+      const ocrPointNames = Object.keys(ocrEditedResult);
+      const ocrNormMap: Record<string, string> = {};
+      ocrPointNames.forEach(name => { ocrNormMap[normalizeName(name)] = name; });
+      // Build normalized indicator key map
+      const ocrFirstPoint = ocrEditedResult[ocrPointNames[0]];
+      const ocrIndNormMap: Record<string, string> = {};
+      if (ocrFirstPoint) {
+        Object.keys(ocrFirstPoint).forEach(name => { ocrIndNormMap[normalizeName(name)] = name; });
+      }
+
+      return prev.map(d => {
+        // Try exact point name match first, then normalized match
+        let ptData = ocrEditedResult[d.sample_point_name];
+        if (!ptData) {
+          const normPt = normalizeName(d.sample_point_name);
+          const matchedKey = ocrNormMap[normPt];
+          if (matchedKey) ptData = ocrEditedResult[matchedKey];
+        }
+        if (ptData) {
+          // Try exact indicator name match first, then normalized
+          let val = ptData[d.indicator_name];
+          if (val === undefined || val === '') {
+            const normInd = normalizeName(d.indicator_name);
+            const matchedInd = ocrIndNormMap[normInd];
+            if (matchedInd) val = ptData[matchedInd];
+          }
+          if (val !== undefined && val !== '' && val !== null) {
+            filled++;
+            return { ...d, value_text: val };
+          }
+        }
+        return d;
+      });
+    });
+    setOcrModalOpen(false);
+    setAutoSaveStatus('unsaved');
+    message.success(`已自动填充 ${filled} 个单元格，请核对后保存`);
+  };
+
+  const ocrInputRef = useRef<HTMLInputElement | null>(null);
+
+  const ocrThStyle: React.CSSProperties = {
+    padding: '6px 4px', textAlign: 'center', border: '1px solid #d9d9d9',
+    fontWeight: 600, fontSize: 12, background: '#f0f5fa',
+  };
+  const ocrTdStyle: React.CSSProperties = {
+    padding: '4px', textAlign: 'center', border: '1px solid #e8ecf1',
   };
 
   const updateCell = (samplePointId: number, indicatorId: number, value: string) => {
@@ -733,7 +853,11 @@ export default function DataEntry() {
   // Anyone can review — just enter name and click
   const abnormalItems = details.filter(d => d.is_abnormal);
   const filledCells = details.filter(d => d.value_text && d.value_text.trim()).length;
-  const completedPoints = allPoints.filter(p => getRowStatus(p.sample_point_id) === 'complete').length;
+  const filledPoints = allPoints.filter(p => {
+    const s = getRowStatus(p.sample_point_id);
+    return s === 'complete' || s === 'abnormal';
+  }).length;
+  const abnormalPoints = allPoints.filter(p => getRowStatus(p.sample_point_id) === 'abnormal').length;
   const totalPoints = allPoints.length;
 
   return (
@@ -784,6 +908,7 @@ export default function DataEntry() {
                     setAddPointModalOpen(true);
                   });
                 }} style={{ borderRadius: 8 }}>添加点位</Button>
+                <Button icon={<CameraOutlined />} onClick={handleOcrRecognize} style={{ borderRadius: 8, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', color: '#fff' }}>拍照识别</Button>
                 <Popconfirm title="提交后将无法修改，确认提交？" onConfirm={handleSubmit} okText="确认提交" cancelText="取消">
                   <Button type="primary" icon={<SendOutlined />} style={{ borderRadius: 8, background: 'linear-gradient(135deg, #0e7490, #0891b2)', border: 'none' }}>提交审核</Button>
                 </Popconfirm>
@@ -966,7 +1091,7 @@ export default function DataEntry() {
                         onChange={a => {
                           setActiveArea(a);
                           const areaPts = a === 'all' ? allPoints : allPoints.filter(p => p.sample_point_area === a);
-                          const incomplete = areaPts.find(p => getRowStatus(p.sample_point_id) !== 'complete');
+                          const incomplete = areaPts.find(p => { const s = getRowStatus(p.sample_point_id); return s !== 'complete' && s !== 'abnormal'; });
                           if (incomplete || areaPts[0]) setSinglePointId((incomplete || areaPts[0]).sample_point_id);
                         }}
                         options={[
@@ -981,7 +1106,7 @@ export default function DataEntry() {
                       options={allPoints
                         .filter(p => activeArea === 'all' || p.sample_point_area === activeArea)
                         .map(p => ({
-                          label: `${p.sample_point_name} (${getRowStatus(p.sample_point_id) === 'complete' ? '✓' : getRowStatus(p.sample_point_id) === 'partial' ? '◐' : '○'})`,
+                          label: `${p.sample_point_name} (${getRowStatus(p.sample_point_id) === 'complete' ? '✓' : getRowStatus(p.sample_point_id) === 'abnormal' ? '⚠' : getRowStatus(p.sample_point_id) === 'partial' ? '◐' : '○'})`,
                           value: p.sample_point_id,
                         }))}
                     />
@@ -1033,7 +1158,7 @@ export default function DataEntry() {
                     }
                   }}
                 >
-                  已完成 {completedPoints}/{totalPoints} 采样点 {completedPoints < totalPoints ? '→ 跳转未完成' : '✓'}
+                  已填报 {filledPoints}/{totalPoints} 采样点 {filledPoints < totalPoints ? '→ 跳转未填报' : '✓'}
                 </Typography.Text>
               </Space>
               <Button type="link" size="small" onClick={() => setLegendExpanded(!legendExpanded)} style={{ fontSize: 11, padding: 0 }}>
@@ -1066,7 +1191,7 @@ export default function DataEntry() {
                 { key: 'all', label: `全部 (${totalPoints})` },
                 ...areas.map(a => {
                   const cnt = allPoints.filter(p => p.sample_point_area === a).length;
-                  const done = allPoints.filter(p => p.sample_point_area === a && getRowStatus(p.sample_point_id) === 'complete').length;
+                  const done = allPoints.filter(p => p.sample_point_area === a && (getRowStatus(p.sample_point_id) === 'complete' || getRowStatus(p.sample_point_id) === 'abnormal')).length;
                   return { key: a, label: `${a} (${done}/${cnt})` };
                 }),
               ]}
@@ -1216,24 +1341,24 @@ export default function DataEntry() {
           }}>
             <Space size="large">
               <Typography.Text
-                style={{ fontSize: 12, color: completedPoints < totalPoints ? '#0891b2' : '#64748b', cursor: completedPoints < totalPoints ? 'pointer' : 'default', textDecoration: completedPoints < totalPoints ? 'underline' : 'none' }}
+                style={{ fontSize: 12, color: filledPoints < totalPoints ? '#0891b2' : '#64748b', cursor: filledPoints < totalPoints ? 'pointer' : 'default', textDecoration: filledPoints < totalPoints ? 'underline' : 'none' }}
                 onClick={() => {
-                  if (completedPoints >= totalPoints) return;
+                  if (filledPoints >= totalPoints) return;
                   if (viewMode === 'single') {
-                    const next = allPoints.find(p => getRowStatus(p.sample_point_id) !== 'complete' && p.sample_point_id !== singlePointId);
+                    const next = allPoints.find(p => { const s = getRowStatus(p.sample_point_id); return s !== 'complete' && s !== 'abnormal' && p.sample_point_id !== singlePointId; });
                     if (next) { setSinglePointId(next.sample_point_id); if (next.sample_point_area !== activeArea) setActiveArea('all'); }
                   } else {
-                    const next = allPoints.find(p => getRowStatus(p.sample_point_id) !== 'complete');
+                    const next = allPoints.find(p => { const s = getRowStatus(p.sample_point_id); return s !== 'complete' && s !== 'abnormal'; });
                     if (next?.sample_point_area && next.sample_point_area !== activeArea) setActiveArea(next.sample_point_area);
                   }
                 }}
               >
-                <CheckCircleOutlined style={{ color: completedPoints >= totalPoints ? '#52c41a' : '#0891b2' }} /> 已完成 {completedPoints}/{totalPoints} 采样点
-                {completedPoints < totalPoints && ' → 跳转未完成'}
+                <CheckCircleOutlined style={{ color: filledPoints >= totalPoints ? '#52c41a' : '#0891b2' }} /> 已填报 {filledPoints}/{totalPoints} 采样点
+                {filledPoints < totalPoints && ' → 跳转未填报'}
               </Typography.Text>
-              {abnormalItems.length > 0 && (
+              {abnormalPoints > 0 && (
                 <Typography.Text style={{ fontSize: 12, color: '#ff4d4f' }}>
-                  <ExclamationCircleOutlined /> {abnormalItems.length} 项超标
+                  <ExclamationCircleOutlined /> {abnormalPoints} 个点位超标
                 </Typography.Text>
               )}
             </Space>
@@ -1388,6 +1513,76 @@ export default function DataEntry() {
         </Card>
         </div>
       )}
+
+      {/* OCR Review Modal */}
+      <Modal
+        title="拍照识别结果"
+        open={ocrModalOpen}
+        onCancel={() => { setOcrModalOpen(false); setOcrResult(null); setOcrEditedResult(null); setOcrError(''); }}
+        width={900}
+        footer={ocrResult ? [
+          <Button key="cancel" onClick={() => { setOcrModalOpen(false); setOcrResult(null); setOcrEditedResult(null); }}>取消</Button>,
+          <Button key="fill" type="primary" onClick={handleOcrFill} icon={<ThunderboltOutlined />}>一键填充到表格</Button>,
+        ] : null}
+        maskClosable={!ocrLoading}
+      >
+        {ocrLoading && (
+          <div style={{ textAlign: 'center', padding: '40px 0' }}>
+            <Spin size="large" />
+            <Typography.Text type="secondary" style={{ display: 'block', marginTop: 16 }}>正在识别检测报告，请稍候...</Typography.Text>
+          </div>
+        )}
+
+        {ocrError && (
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <CloseCircleOutlined style={{ fontSize: 40, color: '#ff4d4f' }} />
+            <Typography.Text type="danger" style={{ display: 'block', marginTop: 12 }}>{ocrError}</Typography.Text>
+          </div>
+        )}
+
+        {ocrEditedResult && !ocrLoading && (
+          <div style={{ maxHeight: '60vh', overflow: 'auto' }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>
+              请核对识别结果，修改后点击"一键填充到表格"。注意：空白单元格不会被填充。
+            </Typography.Text>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: '#f0f5fa' }}>
+                  <th style={ocrThStyle}>采样点</th>
+                  {indicators.map(ind => (
+                    <th key={ind.id} style={ocrThStyle}>{ind.name}<br /><span style={{ fontSize: 10, color: '#94a3b8' }}>({ind.unit || '-'})</span></th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(ocrEditedResult).map(([ptName, values]) => (
+                  <tr key={ptName}>
+                    <td style={ocrTdStyle}><Typography.Text strong style={{ fontSize: 12 }}>{ptName}</Typography.Text></td>
+                    {indicators.map(ind => (
+                      <td key={ind.id} style={ocrTdStyle}>
+                        <Input
+                          size="small"
+                          value={values[ind.name] || ''}
+                          onChange={e => {
+                            setOcrEditedResult(prev => {
+                              if (!prev) return prev;
+                              return {
+                                ...prev,
+                                [ptName]: { ...prev[ptName], [ind.name]: e.target.value },
+                              };
+                            });
+                          }}
+                          style={{ width: 80, textAlign: 'center', fontSize: 12 }}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
 
       {/* Image Preview Modal */}
       <Modal
