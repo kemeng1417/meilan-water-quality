@@ -77,9 +77,6 @@ export const reviewRecord = (id: number, reviewer: string, conclusion?: string) 
 export const rejectRecord = (id: number, reviewer: string, reason: string) =>
   client.put(`/records/${id}/reject`, null, { params: { reviewer, reason } });
 
-export const getLatestData = (waterTypeId: number) =>
-  client.get('/records/latest-data', { params: { water_type_id: waterTypeId } });
-
 // Details
 export const getDetails = (recordId: number) =>
   client.get(`/records/${recordId}/details`);

@@ -9,7 +9,7 @@ import {
   SaveOutlined, SendOutlined, DownloadOutlined,
   PlusOutlined, ExperimentOutlined, CheckCircleOutlined, CloseCircleOutlined,
   ExclamationCircleOutlined, UserOutlined, ThunderboltOutlined,
-  HomeOutlined, CopyOutlined, SwapOutlined,
+  HomeOutlined, SwapOutlined,
   TableOutlined, UnorderedListOutlined, InfoCircleOutlined,
   FullscreenOutlined, FullscreenExitOutlined,
   CameraOutlined, PictureOutlined, DeleteOutlined,
@@ -18,7 +18,7 @@ import dayjs from 'dayjs';
 import {
   getWaterTypes, getIndicators, getLimits,
   createRecord, getRecord, getDetails, saveDetails, reviewRecord, updateRecord,
-  exportWord, exportExcel, exportHtml, exportPdf, getLatestData, rejectRecord,
+  exportWord, exportExcel, exportHtml, exportPdf, rejectRecord,
   getSamplePoints, uploadPhoto, getPhotos, deletePhoto,
   removePointFromRecord, addPointToRecord, ocrRecognize,
 } from '../api/endpoints';
@@ -84,7 +84,6 @@ export default function DataEntry() {
   const [abnormalExpanded, setAbnormalExpanded] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'unsaved'>('idle');
   const [lastSaved, setLastSaved] = useState<string>('');
-  const [hasLatestData, setHasLatestData] = useState(false);
   const [recordInfoExpanded, setRecordInfoExpanded] = useState(false);
   const [legendExpanded, setLegendExpanded] = useState(false);
   const [addPointModalOpen, setAddPointModalOpen] = useState(false);
@@ -217,26 +216,6 @@ export default function DataEntry() {
     finally { setLoading(false); }
   };
 
-  const handleCopyLast = async () => {
-    if (!selectedWt || !record) return;
-    try {
-      const res = await getLatestData(selectedWt);
-      if (!res.data.found) { message.info('没有找到历史数据'); return; }
-      setDetails(prev => {
-        const updated = [...prev];
-        for (const item of res.data.items) {
-          const idx = updated.findIndex(
-            d => d.sample_point_id === item.sample_point_id && d.indicator_id === item.indicator_id
-          );
-          if (idx >= 0 && item.value_text) updated[idx] = { ...updated[idx], value_text: item.value_text };
-        }
-        return updated;
-      });
-      setAutoSaveStatus('unsaved');
-      message.success(`已从 ${res.data.record_no} (${res.data.test_date}) 复制数据`);
-    } catch { message.error('复制失败'); }
-  };
-
   const handleReject = async () => {
     if (!record) return;
     const reason = prompt('请输入打回原因：');
@@ -263,11 +242,7 @@ export default function DataEntry() {
   };
 
   useEffect(() => {
-    if (record) {
-      loadPhotos();
-      // Check if there's historical data for copy-last
-      getLatestData(record.water_type_id).then(res => setHasLatestData(res.data.found));
-    }
+    if (record) loadPhotos();
   }, [record?.id]);
 
   const handleUploadPhoto = async (samplePointId: number) => {
@@ -399,6 +374,7 @@ export default function DataEntry() {
     };
     input.click();
   };
+  void handleOcrRecognize; // reserved
 
   const handleOcrFill = () => {
     if (!ocrEditedResult) return;
@@ -899,7 +875,6 @@ export default function DataEntry() {
             {isEditable && (
               <>
                 <Button icon={<SaveOutlined />} loading={saving} onClick={handleSave} style={{ borderRadius: 8 }}>保存</Button>
-                <Tooltip title={hasLatestData ? '复制最近一次同类型报告数据' : '暂无历史数据'}><Button icon={<CopyOutlined />} onClick={handleCopyLast} disabled={!hasLatestData} style={{ borderRadius: 8 }}>复制上日</Button></Tooltip>
                 <Button icon={<SwapOutlined />} onClick={() => setPasteModalOpen(true)} style={{ borderRadius: 8 }}>批量粘贴</Button>
                 <Button icon={<PlusOutlined />} onClick={() => {
                   // Load all active points for this water type (not just current points)
@@ -908,7 +883,8 @@ export default function DataEntry() {
                     setAddPointModalOpen(true);
                   });
                 }} style={{ borderRadius: 8 }}>添加点位</Button>
-                <Button icon={<CameraOutlined />} onClick={handleOcrRecognize} style={{ borderRadius: 8, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', color: '#fff' }}>拍照识别</Button>
+{/* 拍照识别功能暂时隐藏 */}
+                {/* <Button icon={<CameraOutlined />} onClick={handleOcrRecognize} style={{ borderRadius: 8, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', color: '#fff' }}>拍照识别</Button> */}
                 <Popconfirm title="提交后将无法修改，确认提交？" onConfirm={handleSubmit} okText="确认提交" cancelText="取消">
                   <Button type="primary" icon={<SendOutlined />} style={{ borderRadius: 8, background: 'linear-gradient(135deg, #0e7490, #0891b2)', border: 'none' }}>提交审核</Button>
                 </Popconfirm>
