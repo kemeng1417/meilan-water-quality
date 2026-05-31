@@ -105,6 +105,8 @@ export default function DataEntry() {
 
   useEffect(() => {
     if (!selectedWt) return;
+    setAvailablePoints([]);
+    setSelectedPointIds([]);
     getIndicators(selectedWt).then(res => setIndicators(res.data));
     getLimits(selectedWt).then(res => setLimits(res.data));
     // For combined type (4), also load limits for type 2 (末梢水)
@@ -186,15 +188,20 @@ export default function DataEntry() {
   }, [details, isFullscreen]);
   useEffect(() => {
     if (selectedWt) localStorage.setItem(LS_LAST_WT, String(selectedWt));
-    if (selectedWt && selectedPointIds.length > 0) {
-      localStorage.setItem(`${LS_LAST_POINTS}_${selectedWt}`, JSON.stringify(selectedPointIds));
+    if (selectedWt && selectedPointIds.length > 0 && availablePoints.length > 0) {
+      // 仅保存属于当前 availablePoints 的 ID，防止水样切换时跨类型污染
+      const validIds = new Set(availablePoints.map((p: any) => p.id));
+      if (selectedPointIds.every(id => validIds.has(id))) {
+        localStorage.setItem(`${LS_LAST_POINTS}_${selectedWt}`, JSON.stringify(selectedPointIds));
+      }
     }
-  }, [selectedWt, selectedPointIds]);
+  }, [selectedWt, selectedPointIds, availablePoints]);
 
   // ── Record CRUD ──
   const handleCreate = async () => {
     if (!selectedWt) { message.warning('请选择水样类型'); return; }
     if (!tester) { message.warning('请输入化验员'); return; }
+    if (selectedPointIds.length === 0) { message.warning('请至少选择一个采样点'); return; }
     setLoading(true);
     try {
       const res = await createRecord({
@@ -212,7 +219,7 @@ export default function DataEntry() {
       if (pts.length > 0) setSinglePointId(Number(pts[0]));
       message.success(`报告 ${rec.record_no} 已创建`);
       navigate(`/records/${rec.id}`, { replace: true });
-    } catch { message.error('创建失败'); }
+    } catch (e: any) { message.error(e?.response?.data?.detail || '创建失败'); }
     finally { setLoading(false); }
   };
 

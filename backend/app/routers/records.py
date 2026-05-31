@@ -19,11 +19,18 @@ def _gen_record_no(db: Session, wt_id: int, test_date: date) -> str:
     prefix_map = {"finished": "CCS", "tap": "MSS", "direct": "ZYS", "combined": "LH"}
     prefix = prefix_map.get(wt.code, "JC") if wt else "JC"
     date_str = test_date.strftime("%Y%m%d")
-    count = db.query(TestRecord).filter(
-        TestRecord.test_date == test_date,
-        TestRecord.water_type_id == wt_id,
-    ).count()
-    return f"{prefix}-{date_str}-{count + 1:03d}"
+    pattern = f"{prefix}-{date_str}-%"
+    max_no = db.query(TestRecord).filter(
+        TestRecord.record_no.like(pattern),
+    ).order_by(TestRecord.record_no.desc()).first()
+    if max_no:
+        try:
+            seq = int(max_no.record_no.rsplit("-", 1)[-1]) + 1
+        except ValueError:
+            seq = 1
+    else:
+        seq = 1
+    return f"{prefix}-{date_str}-{seq:03d}"
 
 
 @router.get("")
@@ -102,12 +109,16 @@ def create_record(req: TestRecordCreate, db: Session = Depends(get_db)):
     db.add(record)
     db.flush()
 
-    # 加载采样点（支持用户筛选点位）
+    # 加载采样点（限制在当前水样类型内，防止前端传入跨类型ID）
     if req.point_ids:
-        points = db.query(SamplePoint).filter(
-            SamplePoint.id.in_(req.point_ids),
-            SamplePoint.is_active == True,
-        ).all()
+        filters = [SamplePoint.id.in_(req.point_ids), SamplePoint.is_active == True]
+        if req.water_type_id == 4:
+            filters.append(SamplePoint.water_type_id.in_([1, 2]))
+        else:
+            filters.append(SamplePoint.water_type_id == req.water_type_id)
+        points = db.query(SamplePoint).filter(*filters).all()
+        if not points:
+            raise HTTPException(status_code=400, detail="所选采样点不属于当前水样类型，请重新选择")
     elif req.water_type_id == 4:
         points = db.query(SamplePoint).filter(
             SamplePoint.water_type_id.in_([1, 2]),
