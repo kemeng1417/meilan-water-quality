@@ -95,6 +95,7 @@ export default function DataEntry() {
   const [ocrEditedResult, setOcrEditedResult] = useState<Record<string, Record<string, string>> | null>(null);
   const [ocrError, setOcrError] = useState('');
   const autoSaveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const performSaveRef = useRef<(isAutoSave: boolean) => Promise<void>>(async () => {});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const undoStack = useRef<DetailRow[][]>([]);
   const redoStack = useRef<DetailRow[][]>([]);
@@ -119,10 +120,15 @@ export default function DataEntry() {
       setLimits2([]);
     }
     getSamplePoints(selectedWt).then(res => {
-      setAvailablePoints(res.data);
+      const sorted = [...res.data].sort((a: any, b: any) => {
+        const areaCmp = (a.area || '').localeCompare(b.area || '', 'zh');
+        if (areaCmp !== 0) return areaCmp;
+        return (a.name || '').localeCompare(b.name || '', 'zh');
+      });
+      setAvailablePoints(sorted);
       if (!recordId) {
         const saved = localStorage.getItem(`${LS_LAST_POINTS}_${selectedWt}`);
-        setSelectedPointIds(saved ? JSON.parse(saved) : res.data.map((p: any) => p.id));
+        setSelectedPointIds(saved ? JSON.parse(saved) : sorted.map((p: any) => p.id));
       }
     });
   }, [selectedWt]);
@@ -148,7 +154,7 @@ export default function DataEntry() {
   useEffect(() => {
     if (!record || record.status !== 'draft') return;
     autoSaveTimer.current = setInterval(() => {
-      if (autoSaveStatus === 'unsaved') performSave(true);
+      if (autoSaveStatus === 'unsaved') performSaveRef.current(true);
     }, 60000);
     return () => { if (autoSaveTimer.current) clearInterval(autoSaveTimer.current); };
   }, [record, autoSaveStatus]);
@@ -469,15 +475,53 @@ export default function DataEntry() {
     padding: '4px', textAlign: 'center', border: '1px solid #e8ecf1',
   };
 
+  // ── Local compliance check (mirrors backend compliance.py) ──
+  const getLimitForPoint = (samplePointId: number, indicatorId: number): LimitInfo | undefined => {
+    const pt = availablePoints.find((p: any) => p.id === samplePointId);
+    if (selectedWt === 4 && pt) {
+      return (pt.water_type_id === 2 ? limits2 : limits).find(l => l.indicator_id === indicatorId);
+    }
+    return limits.find(l => l.indicator_id === indicatorId);
+  };
+
+  const computeLocalCompliance = (samplePointId: number, indicatorId: number, valueText: string | null):
+    { is_qualified: boolean | null; is_abnormal: boolean } => {
+    const lim = getLimitForPoint(samplePointId, indicatorId);
+    if (!lim) return { is_qualified: true, is_abnormal: false };
+    // Qualitative
+    if (lim.qual_check) {
+      if (lim.qual_check === '不应检出') {
+        const ok = ['未检出', '0', '—', '/', '<1', '阴性', '未发现'];
+        if (valueText && !ok.includes(valueText.trim())) return { is_qualified: false, is_abnormal: true };
+      } else if (lim.qual_check === '无' || lim.qual_check === '无异臭、异味') {
+        const ok = ['无', '无异臭、异味', '合格', '—', '/'];
+        if (valueText && !ok.includes(valueText.trim())) return { is_qualified: false, is_abnormal: true };
+      }
+      return { is_qualified: true, is_abnormal: false };
+    }
+    // Numeric
+    if (valueText && valueText.trim() === '合格') return { is_qualified: true, is_abnormal: false };
+    const num = (() => {
+      if (!valueText) return null;
+      const m = valueText.trim().match(/[\d.]+/);
+      return m ? parseFloat(m[0]) : null;
+    })();
+    if (num === null) return { is_qualified: null, is_abnormal: false };
+    if (lim.max_value != null && num > lim.max_value) return { is_qualified: false, is_abnormal: true };
+    if (lim.min_value != null && num < lim.min_value) return { is_qualified: false, is_abnormal: true };
+    return { is_qualified: true, is_abnormal: false };
+  };
+
   const updateCell = (samplePointId: number, indicatorId: number, value: string) => {
-    if (isComposingRef.current) return; // Skip during IME composition
+    if (isComposingRef.current) return;
     setDetails(prev => {
       undoStack.current.push(prev);
       if (undoStack.current.length > 50) undoStack.current.shift();
       redoStack.current = [];
+      const result = computeLocalCompliance(samplePointId, indicatorId, value);
       return prev.map(d =>
         d.sample_point_id === samplePointId && d.indicator_id === indicatorId
-          ? { ...d, value_text: value } : d
+          ? { ...d, value_text: value, value_num: result.is_qualified === null ? d.value_num : parseFloat((value.match(/[\d.]+/) || [])[0]) || null, is_qualified: result.is_qualified, is_abnormal: result.is_abnormal } : d
       );
     });
     setAutoSaveStatus('unsaved');
@@ -492,8 +536,11 @@ export default function DataEntry() {
         .filter(d => d.value_text != null && d.value_text !== '')
         .map(d => ({ sample_point_id: d.sample_point_id, indicator_id: d.indicator_id, value_text: d.value_text || '' }));
       const res = await saveDetails(record.id, items);
-      const detRes = await getDetails(record.id);
-      setDetails(detRes.data);
+      if (!isAutoSave) {
+        // Manual save: refresh from server to ensure data consistency
+        const detRes = await getDetails(record.id);
+        setDetails(detRes.data);
+      }
       // Use auto-generated conclusion if not manually set
       if (res.data.conclusion && !conclusion) {
         setConclusion(res.data.conclusion);
@@ -510,6 +557,7 @@ export default function DataEntry() {
       if (!isAutoSave) message.error('保存失败');
     } finally { setSaving(false); }
   };
+  performSaveRef.current = performSave;
 
   const handleSave = async () => {
     await performSave(false);
@@ -623,6 +671,17 @@ export default function DataEntry() {
       if (nextIdx >= 0 && nextIdx < allCells.length) {
         (allCells[nextIdx] as HTMLInputElement).focus();
         (allCells[nextIdx] as HTMLInputElement).select();
+      } else if (dir === 1 && viewMode === 'single') {
+        // Tab from last cell in single mode: jump to next point
+        const vpts = getVisiblePoints();
+        const ptIdx = vpts.findIndex(p => p.sample_point_id === samplePointId);
+        if (ptIdx >= 0 && ptIdx < vpts.length - 1) {
+          setSinglePointId(vpts[ptIdx + 1].sample_point_id);
+          setTimeout(() => {
+            const firstInput = document.querySelector<HTMLInputElement>('[data-cell-input]');
+            if (firstInput) { firstInput.focus(); firstInput.select(); }
+          }, 100);
+        }
       }
     } else if (e.key === 'Enter') {
       e.preventDefault();
@@ -1469,11 +1528,24 @@ export default function DataEntry() {
                 </Typography.Text>
               )}
             </Space>
-            {isEditable && (
-              <Typography.Text style={{ fontSize: 11, color: '#94a3b8' }}>
-                <InfoCircleOutlined /> Tab 跳格 · Enter 换行 · 点击列头一键填充
-              </Typography.Text>
-            )}
+            <Space size="middle">
+              {isEditable && record && (
+                <Typography.Text style={{ fontSize: 11 }}>
+                  {autoSaveStatus === 'saving' ? (
+                    <span style={{ color: '#1677ff' }}><InfoCircleOutlined spin /> 保存中...</span>
+                  ) : autoSaveStatus === 'saved' ? (
+                    <span style={{ color: '#52c41a' }}><CheckCircleOutlined /> 已保存 {lastSaved}</span>
+                  ) : autoSaveStatus === 'unsaved' ? (
+                    <span style={{ color: '#faad14' }}><ExclamationCircleOutlined /> 未保存</span>
+                  ) : null}
+                </Typography.Text>
+              )}
+              {isEditable && (
+                <Typography.Text style={{ fontSize: 11, color: '#94a3b8' }}>
+                  <InfoCircleOutlined /> Tab 跳格 · Enter 换行 · 点击列头一键填充{isFullscreen ? ' · Esc 退出全屏' : ''}
+                </Typography.Text>
+              )}
+            </Space>
           </div>
 
           {/* Conclusion — always visible when record exists */}
