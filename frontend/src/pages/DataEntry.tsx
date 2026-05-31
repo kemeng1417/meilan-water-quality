@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import {
   Card, Select, DatePicker, Input, Button, Table, message,
   Space, Typography, Tag, Descriptions, Popconfirm, Tooltip, Divider,
-  Breadcrumb, Progress, Dropdown, Checkbox, Tabs, Modal, Radio, Spin,
+  Breadcrumb, Progress, Dropdown, Checkbox, Tabs, Modal, Radio, Spin, Collapse,
 } from 'antd';
 import {
   SaveOutlined, SendOutlined, DownloadOutlined,
@@ -836,12 +836,12 @@ export default function DataEntry() {
   // Anyone can review — just enter name and click
   const abnormalItems = details.filter(d => d.is_abnormal);
   const filledCells = details.filter(d => d.value_text && d.value_text.trim()).length;
-  const filledPoints = allPoints.filter(p => {
+  const filledPoints = visiblePoints.filter(p => {
     const s = getRowStatus(p.sample_point_id);
     return s === 'complete' || s === 'abnormal';
   }).length;
-  const abnormalPoints = allPoints.filter(p => getRowStatus(p.sample_point_id) === 'abnormal').length;
-  const totalPoints = allPoints.length;
+  const abnormalPoints = visiblePoints.filter(p => getRowStatus(p.sample_point_id) === 'abnormal').length;
+  const totalPoints = visiblePoints.length;
 
   return (
     <div>
@@ -956,59 +956,136 @@ export default function DataEntry() {
             </Button>
           </div>
 
-          {availablePoints.length > 0 && (
-            <div style={{ marginTop: 16, padding: '14px 18px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e8ecf1' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <Typography.Text strong style={{ fontSize: 13 }}>
-                  选择采样点（{selectedPointIds.length}/{availablePoints.length}）
-                </Typography.Text>
-                <Space size="small">
-                  <Button size="small" onClick={() => setSelectedPointIds(availablePoints.map((p: any) => p.id))}>全选</Button>
-                  <Button size="small" onClick={() => setSelectedPointIds([])}>清空</Button>
-                  <Divider type="vertical" />
-                  <Button size="small" onClick={() => {
-                    const name = prompt('模板名称（用于保存当前选择）：');
-                    if (name) {
-                      const templates = JSON.parse(localStorage.getItem('water_point_templates') || '{}');
-                      templates[name] = { wtId: selectedWt, pointIds: selectedPointIds };
-                      localStorage.setItem('water_point_templates', JSON.stringify(templates));
-                      message.success(`模板「${name}」已保存`);
-                    }
-                  }}>保存模板</Button>
-                  <Select
-                    size="small" placeholder="加载模板" style={{ width: 130 }}
-                    value={undefined}
-                    onChange={name => {
-                      if (!name) return;
-                      const templates = JSON.parse(localStorage.getItem('water_point_templates') || '{}');
-                      const tmpl = templates[name];
-                      if (tmpl) {
-                        if (tmpl.wtId === selectedWt) {
-                          setSelectedPointIds(tmpl.pointIds.filter((id: number) => availablePoints.some((p: any) => p.id === id)));
-                          message.success(`已加载模板「${name}」`);
-                        } else {
-                          message.warning('模板水样类型不匹配');
-                        }
+          {availablePoints.length > 0 && (() => {
+            const areaGroups = new Map<string, any[]>();
+            availablePoints.forEach((pt: any) => {
+              const area = pt.area || '未分类';
+              if (!areaGroups.has(area)) areaGroups.set(area, []);
+              areaGroups.get(area)!.push(pt);
+            });
+            const templates = JSON.parse(localStorage.getItem('water_point_templates') || '{}');
+            const templateKeys = Object.keys(templates);
+            return (
+              <div style={{ marginTop: 16, padding: '14px 18px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e8ecf1' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <Typography.Text strong style={{ fontSize: 13 }}>
+                    选择采样点（{selectedPointIds.length}/{availablePoints.length}）
+                  </Typography.Text>
+                  <Space size="small">
+                    <Button size="small" onClick={() => setSelectedPointIds(availablePoints.map((p: any) => p.id))}>全选</Button>
+                    <Button size="small" onClick={() => setSelectedPointIds([])}>清空</Button>
+                    <Divider type="vertical" />
+                    <Button size="small" onClick={() => {
+                      const name = prompt('模板名称（用于保存当前选择）：');
+                      if (name) {
+                        const tmpls = JSON.parse(localStorage.getItem('water_point_templates') || '{}');
+                        tmpls[name] = { wtId: selectedWt, pointIds: selectedPointIds };
+                        localStorage.setItem('water_point_templates', JSON.stringify(tmpls));
+                        message.success(`模板「${name}」已保存`);
                       }
-                    }}
-                    options={Object.keys(JSON.parse(localStorage.getItem('water_point_templates') || '{}')).map(k => ({ label: k, value: k }))}
-                  />
-                </Space>
+                    }}>保存模板</Button>
+                    {templateKeys.length > 0 && (
+                      <Select
+                        size="small" placeholder="加载模板" style={{ width: 130 }}
+                        value={undefined}
+                        onChange={name => {
+                          if (!name) return;
+                          const tmpls = JSON.parse(localStorage.getItem('water_point_templates') || '{}');
+                          const tmpl = tmpls[name];
+                          if (tmpl) {
+                            if (tmpl.wtId === selectedWt) {
+                              setSelectedPointIds(tmpl.pointIds.filter((id: number) => availablePoints.some((p: any) => p.id === id)));
+                              message.success(`已加载模板「${name}」`);
+                            } else {
+                              message.warning('模板水样类型不匹配');
+                            }
+                          }
+                        }}
+                        options={templateKeys.map(k => ({ label: k, value: k }))}
+                      />
+                    )}
+                    {templateKeys.length > 0 && (
+                      <Popconfirm
+                        title="删除模板"
+                        description="选择要删除的模板："
+                        onConfirm={() => {
+                          const name = prompt('输入要删除的模板名称：');
+                          if (name) {
+                            const tmpls = JSON.parse(localStorage.getItem('water_point_templates') || '{}');
+                            if (tmpls[name]) {
+                              delete tmpls[name];
+                              localStorage.setItem('water_point_templates', JSON.stringify(tmpls));
+                              message.success(`模板「${name}」已删除`);
+                            } else {
+                              message.warning(`模板「${name}」不存在`);
+                            }
+                          }
+                        }}
+                        okText="删除" cancelText="取消"
+                      >
+                        <Button size="small" danger>删除模板</Button>
+                      </Popconfirm>
+                    )}
+                  </Space>
+                </div>
+                <Checkbox.Group
+                  value={selectedPointIds}
+                  onChange={v => setSelectedPointIds(v as number[])}
+                  style={{ width: '100%' }}
+                >
+                  {areaGroups.size > 1 ? (
+                    <Collapse
+                      defaultActiveKey={[...areaGroups.keys()]}
+                      size="small"
+                      ghost
+                      style={{ background: 'transparent' }}
+                      items={[...areaGroups.entries()].map(([area, pts]) => ({
+                        key: area,
+                        label: (
+                          <Space size={4}>
+                            <Tag color={AREA_COLORS[area] || 'default'} style={{ borderRadius: 4, fontSize: 11 }}>{area}</Tag>
+                            <span style={{ fontSize: 12, color: '#64748b' }}>
+                              {pts.filter((p: any) => selectedPointIds.includes(p.id)).length}/{pts.length}
+                            </span>
+                          </Space>
+                        ),
+                        extra: (
+                          <Space size={4} onClick={e => e.stopPropagation()}>
+                            <Button size="small" type="link" style={{ fontSize: 11 }} onClick={() => {
+                              const ids = pts.map((p: any) => p.id);
+                              setSelectedPointIds(prev => [...new Set([...prev, ...ids])]);
+                            }}>全选</Button>
+                            <Button size="small" type="link" style={{ fontSize: 11 }} onClick={() => {
+                              const ids = new Set(pts.map((p: any) => p.id));
+                              setSelectedPointIds(prev => prev.filter(id => !ids.has(id)));
+                            }}>清空</Button>
+                          </Space>
+                        ),
+                        children: (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', paddingLeft: 8 }}>
+                            {pts.map((pt: any) => (
+                              <Checkbox key={pt.id} value={pt.id} style={{ fontSize: 13 }}>
+                                {pt.name}
+                              </Checkbox>
+                            ))}
+                          </div>
+                        ),
+                      }))}
+                    />
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
+                      {availablePoints.map((pt: any) => (
+                        <Checkbox key={pt.id} value={pt.id} style={{ fontSize: 13 }}>
+                          <Tag color={AREA_COLORS[pt.area] || 'default'} style={{ borderRadius: 4, fontSize: 10, marginRight: 4 }}>{pt.area}</Tag>
+                          {pt.name}
+                        </Checkbox>
+                      ))}
+                    </div>
+                  )}
+                </Checkbox.Group>
               </div>
-              <Checkbox.Group
-                value={selectedPointIds}
-                onChange={v => setSelectedPointIds(v as number[])}
-                style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}
-              >
-                {availablePoints.map((pt: any) => (
-                  <Checkbox key={pt.id} value={pt.id} style={{ fontSize: 13 }}>
-                    <Tag color={AREA_COLORS[pt.area] || 'default'} style={{ borderRadius: 4, fontSize: 10, marginRight: 4 }}>{pt.area}</Tag>
-                    {pt.name}
-                  </Checkbox>
-                ))}
-              </Checkbox.Group>
-            </div>
-          )}
+            );
+          })()}
         </Card>
       )}
 
