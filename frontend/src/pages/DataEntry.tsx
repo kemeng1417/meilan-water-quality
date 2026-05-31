@@ -173,7 +173,11 @@ export default function DataEntry() {
   // ── Keyboard shortcuts (Ctrl+Z undo, Ctrl+Y redo, ESC fullscreen) ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (isComposingRef.current) return; // Skip shortcuts during IME composition
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+        return;
+      }
+      if (isComposingRef.current) return; // Skip edit shortcuts during IME composition
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         if (undoStack.current.length > 0) {
@@ -188,8 +192,6 @@ export default function DataEntry() {
           setDetails(redoStack.current.pop()!);
           setAutoSaveStatus('unsaved');
         }
-      } else if (e.key === 'Escape' && isFullscreen) {
-        setIsFullscreen(false);
       }
     };
     window.addEventListener('keydown', handler);
@@ -529,6 +531,7 @@ export default function DataEntry() {
 
   const performSave = async (isAutoSave = false) => {
     if (!record) return;
+    isComposingRef.current = false; // safety: prevent stuck IME flag
     setSaving(true);
     if (!isAutoSave) setAutoSaveStatus('saving');
     try {
@@ -562,7 +565,10 @@ export default function DataEntry() {
   const handleSave = async () => {
     await performSave(false);
     if (record) {
-      try { await updateRecord(record.id, { conclusion }); } catch { /* silent */ }
+      try {
+        const res = await updateRecord(record.id, { conclusion });
+        setRecord((prev: any) => ({ ...prev, ...res.data, status: res.data.status || prev.status }));
+      } catch { /* silent */ }
     }
   };
 
@@ -834,9 +840,9 @@ export default function DataEntry() {
           onCompositionStart={() => { isComposingRef.current = true; }}
           onCompositionEnd={(e: any) => {
             isComposingRef.current = false;
-            // Commit the final composed value
             updateCell(row.sample_point_id, ind.id, e.target.value);
           }}
+          onBlur={() => { isComposingRef.current = false; }}
           {...{ 'data-cell-input': '', 'data-sp-id': String(row.sample_point_id), 'data-ind-id': String(ind.id) } as any}
           style={{
             textAlign: 'center', borderRadius: 4, height: isFullscreen ? 40 : 36,
@@ -1200,8 +1206,9 @@ export default function DataEntry() {
         <Card size="small" style={{ borderRadius: 10, marginBottom: 16, background: '#f8fafc', border: '1px solid #e8ecf1' }}
           bodyStyle={{ padding: recordInfoExpanded ? '12px 16px' : '6px 16px' }}>
           {recordInfoExpanded ? (
-            <Descriptions size="small" column={6} colon={false}>
+            <Descriptions size="small" column={7} colon={false}>
               <Descriptions.Item label="报告编号"><Typography.Text code>{record.record_no}</Typography.Text></Descriptions.Item>
+              <Descriptions.Item label="状态">{STATUS_MAP[record.status]?.label || record.status}</Descriptions.Item>
               <Descriptions.Item label="水样类型">{waterTypes.find(w => w.id === record.water_type_id)?.name}</Descriptions.Item>
               <Descriptions.Item label="执行标准">{waterTypes.find(w => w.id === record.water_type_id)?.standard_code}</Descriptions.Item>
               <Descriptions.Item label="化验日期">{record.test_date}</Descriptions.Item>
@@ -1212,6 +1219,9 @@ export default function DataEntry() {
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Typography.Text code style={{ fontSize: 12 }}>{record.record_no}</Typography.Text>
+              <Tag color={record.status === 'draft' ? 'default' : record.status === 'submitted' ? 'processing' : record.status === 'reviewed' ? 'success' : 'warning'} style={{ fontSize: 11 }}>
+                {STATUS_MAP[record.status]?.label || record.status}
+              </Tag>
               <Typography.Text style={{ fontSize: 12, color: '#64748b' }}>{waterTypes.find(w => w.id === record.water_type_id)?.name} | 化验: {record.test_date} | 报告: {record.report_date} | 化验员: {record.tester}</Typography.Text>
             </div>
           )}
