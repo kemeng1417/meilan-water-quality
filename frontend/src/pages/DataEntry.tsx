@@ -43,6 +43,7 @@ interface LimitInfo {
 
 const LS_LAST_WT = 'water_last_water_type';
 const LS_LAST_POINTS = 'water_last_points';
+const LS_LAST_TESTER = 'water_last_tester';
 
 export default function DataEntry() {
   const params = useParams();
@@ -65,7 +66,7 @@ export default function DataEntry() {
   const [details, setDetails] = useState<DetailRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [tester, setTester] = useState(user.display_name || '');
+  const [tester, setTester] = useState(user.display_name || localStorage.getItem(LS_LAST_TESTER) || '');
   const [testDate, setTestDate] = useState<dayjs.Dayjs>(dayjs());
   const [reportDate, setReportDate] = useState<dayjs.Dayjs>(dayjs());
   const [conclusion, setConclusion] = useState('');
@@ -99,6 +100,8 @@ export default function DataEntry() {
   const redoStack = useRef<DetailRow[][]>([]);
   const isComposingRef = useRef(false);
   const [changedCells, setChangedCells] = useState<Set<string>>(new Set());
+  const [pointSearch, setPointSearch] = useState('');
+  const [templateVersion, setTemplateVersion] = useState(0);
 
   // ── Data Loading ──
   useEffect(() => { getWaterTypes().then(res => setWaterTypes(res.data)); }, []);
@@ -202,25 +205,51 @@ export default function DataEntry() {
     if (!selectedWt) { message.warning('请选择水样类型'); return; }
     if (!tester) { message.warning('请输入化验员'); return; }
     if (selectedPointIds.length === 0) { message.warning('请至少选择一个采样点'); return; }
-    setLoading(true);
-    try {
-      const res = await createRecord({
-        water_type_id: selectedWt,
-        test_date: testDate.format('YYYY-MM-DD'),
-        report_date: reportDate.format('YYYY-MM-DD'),
-        tester,
-        point_ids: selectedPointIds.length > 0 ? selectedPointIds : undefined,
-      });
-      const rec = res.data;
-      setRecord(rec);
-      const detRes = await getDetails(rec.id);
-      setDetails(detRes.data);
-      const pts = [...new Set(detRes.data.map((d: DetailRow) => d.sample_point_id))];
-      if (pts.length > 0) setSinglePointId(Number(pts[0]));
-      message.success(`报告 ${rec.record_no} 已创建`);
-      navigate(`/records/${rec.id}`, { replace: true });
-    } catch (e: any) { message.error(e?.response?.data?.detail || '创建失败'); }
-    finally { setLoading(false); }
+
+    const wtName = waterTypes.find(w => w.id === selectedWt)?.name || '';
+    const selectedNames = availablePoints
+      .filter((p: any) => selectedPointIds.includes(p.id))
+      .map((p: any) => p.name)
+      .join('、');
+
+    Modal.confirm({
+      title: '确认创建报告',
+      icon: <ExclamationCircleOutlined />,
+      content: (
+        <Descriptions column={1} size="small" style={{ marginTop: 12 }}>
+          <Descriptions.Item label="水样类型">{wtName}</Descriptions.Item>
+          <Descriptions.Item label="化验日期">{testDate.format('YYYY-MM-DD')}</Descriptions.Item>
+          <Descriptions.Item label="报告日期">{reportDate.format('YYYY-MM-DD')}</Descriptions.Item>
+          <Descriptions.Item label="化验员">{tester}</Descriptions.Item>
+          <Descriptions.Item label="采样点 ({count})">{selectedNames}</Descriptions.Item>
+        </Descriptions>
+      ) as any,
+      okText: '确认创建',
+      cancelText: '取消',
+      width: 480,
+      onOk: async () => {
+        setLoading(true);
+        try {
+          const res = await createRecord({
+            water_type_id: selectedWt,
+            test_date: testDate.format('YYYY-MM-DD'),
+            report_date: reportDate.format('YYYY-MM-DD'),
+            tester,
+            point_ids: selectedPointIds,
+          });
+          const rec = res.data;
+          setRecord(rec);
+          setPointSearch(''); // clear search after creation
+          const detRes = await getDetails(rec.id);
+          setDetails(detRes.data);
+          const pts = [...new Set(detRes.data.map((d: DetailRow) => d.sample_point_id))];
+          if (pts.length > 0) setSinglePointId(Number(pts[0]));
+          message.success(`报告 ${rec.record_no} 已创建`);
+          navigate(`/records/${rec.id}`, { replace: true });
+        } catch (e: any) { message.error(e?.response?.data?.detail || '创建失败'); }
+        finally { setLoading(false); }
+      },
+    });
   };
 
   const handleReject = async () => {
@@ -947,7 +976,7 @@ export default function DataEntry() {
               <DatePicker size="large" value={reportDate} onChange={d => setReportDate(d || dayjs())} style={{ borderRadius: 8 }} />
               <Button size="small" onClick={() => setReportDate(dayjs())}>今天</Button>
             </Space>
-            <Input size="large" placeholder="化验员" value={tester} onChange={e => setTester(e.target.value)}
+            <Input size="large" placeholder="化验员" value={tester} onChange={e => { setTester(e.target.value); localStorage.setItem(LS_LAST_TESTER, e.target.value); }}
               style={{ width: 150, borderRadius: 8 }} prefix={<UserOutlined style={{ color: '#94a3b8' }} />}
             />
             <Button type="primary" size="large" loading={loading} onClick={handleCreate} icon={<PlusOutlined />}
@@ -957,23 +986,41 @@ export default function DataEntry() {
           </div>
 
           {availablePoints.length > 0 && (() => {
+            const searchLower = pointSearch.toLowerCase();
+            const filteredPoints = availablePoints.filter((pt: any) =>
+              !pointSearch || pt.name.toLowerCase().includes(searchLower) || (pt.area || '').toLowerCase().includes(searchLower)
+            );
             const areaGroups = new Map<string, any[]>();
-            availablePoints.forEach((pt: any) => {
+            filteredPoints.forEach((pt: any) => {
               const area = pt.area || '未分类';
               if (!areaGroups.has(area)) areaGroups.set(area, []);
               areaGroups.get(area)!.push(pt);
             });
-            const templates = JSON.parse(localStorage.getItem('water_point_templates') || '{}');
+            const templates = JSON.parse(localStorage.getItem('water_point_templates') || '{}'); void templateVersion;
             const templateKeys = Object.keys(templates);
             return (
               <div style={{ marginTop: 16, padding: '14px 18px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e8ecf1' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <Typography.Text strong style={{ fontSize: 13 }}>
-                    选择采样点（{selectedPointIds.length}/{availablePoints.length}）
-                  </Typography.Text>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                  <Space size={8}>
+                    <Typography.Text strong style={{ fontSize: 13 }}>
+                      选择采样点（{selectedPointIds.length}/{availablePoints.length}）
+                    </Typography.Text>
+                    <Input
+                      size="small"
+                      placeholder="搜索采样点…"
+                      prefix={<span style={{ fontSize: 11 }}>🔍</span>}
+                      style={{ width: 160 }}
+                      allowClear
+                      value={pointSearch}
+                      onChange={e => setPointSearch(e.target.value)}
+                    />
+                  </Space>
                   <Space size="small">
                     <Button size="small" onClick={() => setSelectedPointIds(availablePoints.map((p: any) => p.id))}>全选</Button>
                     <Button size="small" onClick={() => setSelectedPointIds([])}>清空</Button>
+                    <Button size="small" onClick={() => {
+                      setSelectedPointIds(availablePoints.filter((p: any) => !selectedPointIds.includes(p.id)).map((p: any) => p.id));
+                    }}>反选</Button>
                     <Divider type="vertical" />
                     <Button size="small" onClick={() => {
                       const name = prompt('模板名称（用于保存当前选择）：');
@@ -981,6 +1028,7 @@ export default function DataEntry() {
                         const tmpls = JSON.parse(localStorage.getItem('water_point_templates') || '{}');
                         tmpls[name] = { wtId: selectedWt, pointIds: selectedPointIds };
                         localStorage.setItem('water_point_templates', JSON.stringify(tmpls));
+                        setTemplateVersion(v => v + 1);
                         message.success(`模板「${name}」已保存`);
                       }
                     }}>保存模板</Button>
@@ -1005,29 +1053,27 @@ export default function DataEntry() {
                       />
                     )}
                     {templateKeys.length > 0 && (
-                      <Popconfirm
-                        title="删除模板"
-                        description="选择要删除的模板："
-                        onConfirm={() => {
-                          const name = prompt('输入要删除的模板名称：');
-                          if (name) {
-                            const tmpls = JSON.parse(localStorage.getItem('water_point_templates') || '{}');
-                            if (tmpls[name]) {
-                              delete tmpls[name];
-                              localStorage.setItem('water_point_templates', JSON.stringify(tmpls));
-                              message.success(`模板「${name}」已删除`);
-                            } else {
-                              message.warning(`模板「${name}」不存在`);
-                            }
+                      <Select
+                        size="small" placeholder="删除模板" style={{ width: 130 }}
+                        value={undefined}
+                        onChange={name => {
+                          if (!name) return;
+                          const tmpls = JSON.parse(localStorage.getItem('water_point_templates') || '{}');
+                          if (tmpls[name]) {
+                            delete tmpls[name];
+                            localStorage.setItem('water_point_templates', JSON.stringify(tmpls));
+                            setTemplateVersion(v => v + 1);
+                            message.success(`模板「${name}」已删除`);
                           }
                         }}
-                        okText="删除" cancelText="取消"
-                      >
-                        <Button size="small" danger>删除模板</Button>
-                      </Popconfirm>
+                        options={templateKeys.map(k => ({ label: `删除: ${k}`, value: k }))}
+                      />
                     )}
                   </Space>
                 </div>
+                {filteredPoints.length === 0 ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>无匹配的采样点</Typography.Text>
+                ) : (
                 <Checkbox.Group
                   value={selectedPointIds}
                   onChange={v => setSelectedPointIds(v as number[])}
@@ -1074,7 +1120,7 @@ export default function DataEntry() {
                     />
                   ) : (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
-                      {availablePoints.map((pt: any) => (
+                      {filteredPoints.map((pt: any) => (
                         <Checkbox key={pt.id} value={pt.id} style={{ fontSize: 13 }}>
                           <Tag color={AREA_COLORS[pt.area] || 'default'} style={{ borderRadius: 4, fontSize: 10, marginRight: 4 }}>{pt.area}</Tag>
                           {pt.name}
@@ -1083,6 +1129,7 @@ export default function DataEntry() {
                     </div>
                   )}
                 </Checkbox.Group>
+                )}
               </div>
             );
           })()}
