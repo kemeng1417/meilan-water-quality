@@ -70,6 +70,7 @@ export default function DataEntry() {
   const [testDate, setTestDate] = useState<dayjs.Dayjs>(dayjs());
   const [reportDate, setReportDate] = useState<dayjs.Dayjs>(dayjs());
   const [conclusion, setConclusion] = useState('');
+  const [conclusionEdited, setConclusionEdited] = useState(false);
   const [reviewer, setReviewer] = useState('');
 
   // New UX state
@@ -515,7 +516,6 @@ export default function DataEntry() {
   };
 
   const updateCell = (samplePointId: number, indicatorId: number, value: string) => {
-    if (isComposingRef.current) return;
     setDetails(prev => {
       undoStack.current.push(prev);
       if (undoStack.current.length > 50) undoStack.current.shift();
@@ -544,8 +544,8 @@ export default function DataEntry() {
         const detRes = await getDetails(record.id);
         setDetails(detRes.data);
       }
-      // Use auto-generated conclusion if not manually set
-      if (res.data.conclusion && !conclusion) {
+      // 用户手动编辑过的结论不覆盖，否则始终用后端最新自动生成
+      if (res.data.conclusion && !conclusionEdited) {
         setConclusion(res.data.conclusion);
       }
       setLastSaved(dayjs().format('HH:mm:ss'));
@@ -1317,25 +1317,6 @@ export default function DataEntry() {
               <Space size="small">
                 <Progress percent={Math.round(filledCells / (totalPoints * indicators.length) * 100)} size="small" style={{ width: 80 }}
                   strokeColor={abnormalItems.length > 0 ? '#faad14' : '#52c41a'} />
-                <Typography.Text
-                  style={{ fontSize: 12, color: '#0891b2', cursor: 'pointer', textDecoration: 'underline' }}
-                  onClick={() => {
-                    if (viewMode === 'single') {
-                      const nextIncomplete = allPoints.find(p => {
-                        const s = getRowStatus(p.sample_point_id);
-                        return s !== 'complete' && p.sample_point_id !== singlePointId;
-                      });
-                      if (nextIncomplete) setSinglePointId(nextIncomplete.sample_point_id);
-                    } else {
-                      const nextIncomplete = allPoints.find(p => getRowStatus(p.sample_point_id) !== 'complete');
-                      if (nextIncomplete && activeArea !== 'all' && nextIncomplete.sample_point_area !== activeArea) {
-                        setActiveArea(nextIncomplete.sample_point_area);
-                      }
-                    }
-                  }}
-                >
-                  已填报 {filledPoints}/{totalPoints} 采样点 {filledPoints < totalPoints ? '→ 跳转未填报' : '✓'}
-                </Typography.Text>
               </Space>
               <Button type="link" size="small" onClick={() => setLegendExpanded(!legendExpanded)} style={{ fontSize: 11, padding: 0 }}>
                 {legendExpanded ? '收起图例 ▲' : '图例说明 ▶'}
@@ -1564,7 +1545,7 @@ export default function DataEntry() {
               <Typography.Text strong style={{ fontSize: 14 }}>结论与备注</Typography.Text>
               <Input.TextArea
                 value={conclusion}
-                onChange={e => { setConclusion(e.target.value); setAutoSaveStatus('unsaved'); }}
+                onChange={e => { setConclusion(e.target.value); setConclusionEdited(true); setAutoSaveStatus('unsaved'); }}
                 placeholder={abnormalItems.length > 0 ? '说明超标原因及整改措施...' : '本次检测项目全部合格'}
                 rows={2}
                 disabled={record?.status === 'reviewed'}

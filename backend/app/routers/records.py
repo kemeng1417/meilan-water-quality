@@ -256,21 +256,28 @@ def batch_save_details(record_id: int, items: list[TestDetailUpdate], db: Sessio
 
     record.is_abnormal = has_abnormal
 
-    # ── Auto-generate conclusion if not manually edited ──
-    if not record.conclusion:
-        if has_abnormal:
-            abnormal_details = db.query(TestDetail).filter(TestDetail.record_id == record_id, TestDetail.is_abnormal == True).all()
-            pt_ids = list(set(d.sample_point_id for d in abnormal_details))
-            ind_ids = list(set(d.indicator_id for d in abnormal_details))
-            pt_names = [p.name for p in db.query(SamplePoint).filter(SamplePoint.id.in_(pt_ids)).all()]
-            ind_names = [i.name for i in db.query(Indicator).filter(Indicator.id.in_(ind_ids)).all()]
-            water_type = db.query(WaterType).filter(WaterType.id == record.water_type_id).first()
-            std = water_type.standard_code if water_type else "相关标准"
-            record.conclusion = f"本次检测发现 {len(abnormal_details)} 项超标，涉及 {len(pt_ids)} 个采样点（{'、'.join(pt_names[:5])}{'等' if len(pt_ids) > 5 else ''}）。超标指标：{'、'.join(ind_names)}。不符合{std}标准要求，需整改。"
-        else:
-            water_type = db.query(WaterType).filter(WaterType.id == record.water_type_id).first()
-            std = water_type.standard_code if water_type else "相关标准"
-            record.conclusion = f"本次检测项目全部合格，符合{std}标准要求。"
+    # ── 始终自动生成最新结论（前端通过 conclusionEdited 控制是否采纳）──
+    water_type = db.query(WaterType).filter(WaterType.id == record.water_type_id).first()
+    std = water_type.standard_code if water_type else "相关标准"
+    total_cells = db.query(TestDetail).filter(TestDetail.record_id == record_id).count()
+    filled_cells = db.query(TestDetail).filter(
+        TestDetail.record_id == record_id,
+        TestDetail.value_text.isnot(None),
+        TestDetail.value_text != '',
+    ).count()
+    empty_cells = total_cells - filled_cells
+
+    if has_abnormal:
+        abnormal_details = db.query(TestDetail).filter(TestDetail.record_id == record_id, TestDetail.is_abnormal == True).all()
+        pt_ids = list(set(d.sample_point_id for d in abnormal_details))
+        ind_ids = list(set(d.indicator_id for d in abnormal_details))
+        pt_names = [p.name for p in db.query(SamplePoint).filter(SamplePoint.id.in_(pt_ids)).all()]
+        ind_names = [i.name for i in db.query(Indicator).filter(Indicator.id.in_(ind_ids)).all()]
+        record.conclusion = f"本次检测发现 {len(abnormal_details)} 项超标，涉及 {len(pt_ids)} 个采样点（{'、'.join(pt_names[:5])}{'等' if len(pt_ids) > 5 else ''}）。超标指标：{'、'.join(ind_names)}。不符合{std}标准要求，需整改。"
+    elif empty_cells > 0:
+        record.conclusion = f"已检项目均符合{std}标准要求，尚有 {empty_cells} 项未填报。"
+    else:
+        record.conclusion = f"本次检测项目全部合格，符合{std}标准要求。"
 
     db.commit()
     return {"success": True, "has_abnormal": has_abnormal, "conclusion": record.conclusion}
@@ -369,11 +376,20 @@ def remove_point_from_record(record_id: int, sample_point_id: int, db: Session =
         raise HTTPException(status_code=404, detail="记录不存在")
     if record.status not in ("draft", "rejected"):
         raise HTTPException(status_code=400, detail="仅草稿或已打回状态可修改")
+    # 先删除关联的告警记录（外键依赖）
+    detail_ids = db.query(TestDetail.id).filter(
+        TestDetail.record_id == record_id,
+        TestDetail.sample_point_id == sample_point_id,
+    ).all()
+    dids = [d[0] for d in detail_ids]
+    if dids:
+        db.query(AlertRecord).filter(AlertRecord.test_detail_id.in_(dids)).delete()
+    # 删除明细
     deleted = db.query(TestDetail).filter(
         TestDetail.record_id == record_id,
         TestDetail.sample_point_id == sample_point_id,
     ).delete()
-    # Also remove associated photos
+    # 删除关联照片
     db.query(Photo).filter(
         Photo.record_id == record_id,
         Photo.sample_point_id == sample_point_id,
