@@ -1,6 +1,6 @@
 """检测记录路由 —— 核心 CRUD + 批量保存 + 合规判定"""
 from datetime import date
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -10,6 +10,7 @@ from app.schemas import (
     TestDetailOut, TestDetailUpdate,
 )
 from app.services.compliance import check_compliance, _parse_numeric
+from app.services.auth import get_current_user
 
 router = APIRouter(prefix="/api/records", tags=["检测记录"])
 
@@ -337,12 +338,21 @@ def get_latest_data(water_type_id: int = Query(...), db: Session = Depends(get_d
 
 
 @router.delete("/{record_id}")
-def delete_record(record_id: int, db: Session = Depends(get_db)):
+def delete_record(record_id: int, db: Session = Depends(get_db),
+                  authorization: str | None = Header(None)):
     record = db.query(TestRecord).filter(TestRecord.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="记录不存在")
-    if record.status == "reviewed":
-        raise HTTPException(status_code=400, detail="已审核记录不可删除")
+    # 检查是否为管理员（管理员可删除已审核记录）
+    is_admin = False
+    if authorization:
+        parts = authorization.split()
+        token = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else None
+        if token:
+            user = get_current_user(db, token)
+            is_admin = user is not None and user.role == "admin"
+    if record.status == "reviewed" and not is_admin:
+        raise HTTPException(status_code=400, detail="已审核记录不可删除，需要管理员权限")
     db.query(AlertRecord).filter(AlertRecord.record_id == record_id).delete()
     db.query(Photo).filter(Photo.record_id == record_id).delete()
     db.query(TestDetail).filter(TestDetail.record_id == record_id).delete()
@@ -352,13 +362,22 @@ def delete_record(record_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/batch-delete")
-def batch_delete_records(ids: list[int], db: Session = Depends(get_db)):
-    """批量删除记录，跳过已审核的，只删除草稿/已打回"""
+def batch_delete_records(ids: list[int], db: Session = Depends(get_db),
+                         authorization: str | None = Header(None)):
+    """批量删除记录，跳过已审核的（管理员除外），只删除草稿/已打回"""
+    # 检查是否为管理员
+    is_admin = False
+    if authorization:
+        parts = authorization.split()
+        token = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else None
+        if token:
+            user = get_current_user(db, token)
+            is_admin = user is not None and user.role == "admin"
     records = db.query(TestRecord).filter(TestRecord.id.in_(ids)).all()
     skipped = []
     deleted = 0
     for r in records:
-        if r.status == "reviewed":
+        if r.status == "reviewed" and not is_admin:
             skipped.append(r.record_no)
             continue
         db.query(AlertRecord).filter(AlertRecord.record_id == r.id).delete()
