@@ -128,8 +128,11 @@ export default function DataEntry() {
       });
       setAvailablePoints(sorted);
       if (!recordId) {
+        const validIds = new Set(sorted.map((p: any) => p.id));
         const saved = localStorage.getItem(`${LS_LAST_POINTS}_${selectedWt}`);
-        setSelectedPointIds(saved ? JSON.parse(saved) : sorted.map((p: any) => p.id));
+        const savedIds: number[] = saved ? JSON.parse(saved) : [];
+        const filtered = savedIds.filter((id: number) => validIds.has(id));
+        setSelectedPointIds(filtered.length > 0 ? filtered : sorted.map((p: any) => p.id));
       }
     });
   }, [selectedWt]);
@@ -152,8 +155,11 @@ export default function DataEntry() {
       });
       getSamplePoints(rec.water_type_id).then(r => {
         setAvailablePoints(r.data);
+        const validIds = new Set(r.data.map((p: any) => p.id));
         const saved = localStorage.getItem(`${LS_LAST_POINTS}_${rec.water_type_id}`);
-        setSelectedPointIds(saved ? JSON.parse(saved) : r.data.map((p: any) => p.id));
+        const savedIds: number[] = saved ? JSON.parse(saved) : [];
+        const filtered = savedIds.filter((id: number) => validIds.has(id));
+        setSelectedPointIds(filtered.length > 0 ? filtered : r.data.map((p: any) => p.id));
       });
     });
     getDetails(id).then(res => {
