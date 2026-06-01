@@ -541,9 +541,11 @@ export default function DataEntry() {
       if (undoStack.current.length > 50) undoStack.current.shift();
       redoStack.current = [];
       const result = computeLocalCompliance(samplePointId, indicatorId, value);
+      const numericMatch = value.match(/[\d.]+/);
+      const parsedNum = numericMatch ? parseFloat(numericMatch[0]) || null : null;
       return prev.map(d =>
         d.sample_point_id === samplePointId && d.indicator_id === indicatorId
-          ? { ...d, value_text: value, value_num: result.is_qualified === null ? d.value_num : parseFloat((value.match(/[\d.]+/) || [])[0]) || null, is_qualified: result.is_qualified, is_abnormal: result.is_abnormal } : d
+          ? { ...d, value_text: value, value_num: result.is_qualified === null ? d.value_num : parsedNum, is_qualified: result.is_qualified, is_abnormal: result.is_abnormal } : d
       );
     });
     setAutoSaveStatus('unsaved');
