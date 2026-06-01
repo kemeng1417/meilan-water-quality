@@ -258,6 +258,7 @@ export default function RecordList() {
     {
       title: '操作', width: 200, fixed: 'right' as const,
       render: (_: any, r: any) => (
+        <span onClick={e => e.stopPropagation()}>
         <Space size="small">
           <Button type="link" size="small" icon={<EyeOutlined />}
             onClick={e => { e.stopPropagation(); navigate(`/records/${r.id}`); }}>查看</Button>
@@ -284,6 +285,7 @@ export default function RecordList() {
             </Popconfirm>
           )}
         </Space>
+        </span>
       ),
     },
   ];

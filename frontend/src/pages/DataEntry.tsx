@@ -109,7 +109,7 @@ export default function DataEntry() {
   useEffect(() => { getWaterTypes().then(res => setWaterTypes(res.data)); }, []);
 
   useEffect(() => {
-    if (!selectedWt) return;
+    if (!selectedWt || recordId) return; // 已有记录时由 [recordId] effect 并行加载
     setAvailablePoints([]);
     setSelectedPointIds([]);
     getIndicators(selectedWt).then(res => setIndicators(res.data));
@@ -137,10 +137,24 @@ export default function DataEntry() {
   useEffect(() => {
     if (!recordId) return;
     const id = parseInt(recordId);
+    // 并行加载所有数据，避免 selectedWt 串行链路
     getRecord(id).then(res => {
-      setRecord(res.data); setSelectedWt(res.data.water_type_id);
-      setTester(res.data.tester); setTestDate(dayjs(res.data.test_date));
-      setConclusion(res.data.conclusion || ''); setReviewer(res.data.reviewer || '');
+      const rec = res.data;
+      setRecord(rec); setSelectedWt(rec.water_type_id);
+      setTester(rec.tester); setTestDate(dayjs(rec.test_date));
+      setConclusion(rec.conclusion || ''); setReviewer(rec.reviewer || '');
+      // 并行拉取指标、限值、采样点
+      getIndicators(rec.water_type_id).then(r => setIndicators(r.data));
+      getLimits(rec.water_type_id).then(r => {
+        setLimits(r.data);
+        if (rec.water_type_id === 4) getLimits(2).then(r2 => setLimits2(r2.data));
+        else setLimits2([]);
+      });
+      getSamplePoints(rec.water_type_id).then(r => {
+        setAvailablePoints(r.data);
+        const saved = localStorage.getItem(`${LS_LAST_POINTS}_${rec.water_type_id}`);
+        setSelectedPointIds(saved ? JSON.parse(saved) : r.data.map((p: any) => p.id));
+      });
     });
     getDetails(id).then(res => {
       setDetails(res.data);
@@ -844,7 +858,8 @@ export default function DataEntry() {
   const isEditable = isDraft || isRejected;
 
   // ── Table columns ──
-  const indicatorColumns = indicators.map(ind => ({
+  // useMemo: 只在数据变化时重算列定义，避免 autoSaveStatus/saving 等触发
+  const indicatorColumns = useMemo(() => indicators.map(ind => ({
     title: (
       <Tooltip title={`标准: ${getLimitText(ind.id)}`} placement="top">
         <div style={{ textAlign: 'center' }}>
@@ -939,10 +954,10 @@ export default function DataEntry() {
         />
       );
     },
-  }));
+  })), [indicators, limits, limits2, isEditable, isFullscreen, details]);
 
   const visiblePoints = getVisiblePoints();
-  const columns = [
+  const columns = useMemo(() => [
     {
       title: '', width: 32, align: 'center' as const, fixed: 'left' as const,
       render: (_: any, r: any) => rowStatusIcon(getRowStatus(r.sample_point_id)),
@@ -1001,7 +1016,7 @@ export default function DataEntry() {
         );
       },
     },
-  ];
+  ], [indicatorColumns, visiblePoints, allPoints, isEditable, details, record, indicators.length]);
 
   // ── Standard limit reference row (inserted as first data row) ──
   const limitRow = {
@@ -1028,11 +1043,11 @@ export default function DataEntry() {
   return (
     <div>
       {/* Breadcrumb */}
-      <Breadcrumb style={{ marginBottom: 12 }} items={[
-        { title: <><HomeOutlined /> 首页</>, onClick: () => navigate('/') },
-        { title: '检测记录', onClick: () => navigate('/records') },
-        { title: record ? record.record_no : '新建报告' },
-      ]} />
+      <Breadcrumb style={{ marginBottom: 12 }}>
+        <Breadcrumb.Item onClick={() => navigate('/')}><HomeOutlined /> 首页</Breadcrumb.Item>
+        <Breadcrumb.Item onClick={() => navigate('/records')}>检测记录</Breadcrumb.Item>
+        <Breadcrumb.Item>{record ? record.record_no : '新建报告'}</Breadcrumb.Item>
+      </Breadcrumb>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
