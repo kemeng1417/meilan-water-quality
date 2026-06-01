@@ -664,6 +664,73 @@ export default function DataEntry() {
     setAutoSaveStatus('unsaved');
   };
 
+  // 清空当前列
+  const handleClearColumn = (indicatorId: number) => {
+    const ind = indicators.find(i => i.id === indicatorId);
+    const colName = ind ? `${ind.name}列` : '该列';
+    Modal.confirm({
+      title: `清空${colName}`,
+      content: `确定清空「${ind?.name}」列的全部已填数据吗？（可通过 Ctrl+Z 撤销）`,
+      okText: '清空',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => {
+        const visiblePtIds = new Set(getVisiblePoints().map(p => p.sample_point_id));
+        setDetails(prev => {
+          undoStack.current.push(prev);
+          redoStack.current = [];
+          return prev.map(d =>
+            d.indicator_id === indicatorId && visiblePtIds.has(d.sample_point_id)
+              ? { ...d, value_text: '', value_num: null, is_qualified: null, is_abnormal: false } : d
+          );
+        });
+        setAutoSaveStatus('unsaved');
+      },
+    });
+  };
+
+  // 重置本行（清空数据，不删点位）
+  const handleClearRow = (samplePointId: number) => {
+    const ptName = allPoints.find(p => p.sample_point_id === samplePointId)?.sample_point_name || '';
+    Modal.confirm({
+      title: '重置本行',
+      content: `确定清空「${ptName}」的全部已填数据吗？（可通过 Ctrl+Z 撤销）`,
+      okText: '清空',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => {
+        setDetails(prev => {
+          undoStack.current.push(prev);
+          redoStack.current = [];
+          return prev.map(d =>
+            d.sample_point_id === samplePointId
+              ? { ...d, value_text: '', value_num: null, is_qualified: null, is_abnormal: false } : d
+          );
+        });
+        setAutoSaveStatus('unsaved');
+      },
+    });
+  };
+
+  // 一键清空全部
+  const handleClearAll = () => {
+    Modal.confirm({
+      title: '清空全部数据',
+      content: `确定清空当前报告所有已填的检测数据吗？（可通过 Ctrl+Z 撤销）`,
+      okText: '全部清空',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => {
+        setDetails(prev => {
+          undoStack.current.push(prev);
+          redoStack.current = [];
+          return prev.map(d => ({ ...d, value_text: '', value_num: null, is_qualified: null, is_abnormal: false }));
+        });
+        setAutoSaveStatus('unsaved');
+      },
+    });
+  };
+
   // ── Keyboard navigation ──
   const handleCellKeyDown = (e: React.KeyboardEvent, samplePointId: number, indicatorId: number) => {
     if (e.key === 'Tab') {
@@ -771,14 +838,30 @@ export default function DataEntry() {
     }
   };
 
+  // ── Editable flag (must be before columns, used in column headers) ──
+  const isDraft = record?.status === 'draft';
+  const isRejected = record?.status === 'rejected';
+  const isEditable = isDraft || isRejected;
+
   // ── Table columns ──
   const indicatorColumns = indicators.map(ind => ({
     title: (
       <Tooltip title={`标准: ${getLimitText(ind.id)}`} placement="top">
-        <div style={{ textAlign: 'center', cursor: 'pointer' }}
-          onClick={() => handleQuickFillColumn(ind.id, ind.value_type === 'text' ? (ind.name === '肉眼可见物' ? '无' : ind.name === '总大肠菌群' ? '未检出' : ind.name === '臭和味' ? '无异臭、异味' : '') : '合格')}>
-          <div style={{ fontWeight: 600, fontSize: isFullscreen ? 15 : 13 }}>{ind.name}</div>
-          {ind.unit && <div style={{ fontSize: isFullscreen ? 12 : 11, color: '#94a3b8' }}>({ind.unit})</div>}
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ cursor: 'pointer', display: 'inline-block' }}
+            onClick={() => handleQuickFillColumn(ind.id, ind.value_type === 'text' ? (ind.name === '肉眼可见物' ? '无' : ind.name === '总大肠菌群' ? '未检出' : ind.name === '臭和味' ? '无异臭、异味' : '') : '合格')}>
+            <div style={{ fontWeight: 600, fontSize: isFullscreen ? 15 : 13 }}>{ind.name}</div>
+            {ind.unit && <div style={{ fontSize: isFullscreen ? 12 : 11, color: '#94a3b8' }}>({ind.unit})</div>}
+          </div>
+          {isEditable && (
+            <Popconfirm title={`清空${ind.name}列？`} onConfirm={() => handleClearColumn(ind.id)} okText="清空" cancelText="取消">
+              <DeleteOutlined
+                onClick={e => e.stopPropagation()}
+                style={{ position: 'absolute', top: 2, right: 2, fontSize: 10, color: '#c0c0c0', cursor: 'pointer' }}
+                title={`清空${ind.name}列`}
+              />
+            </Popconfirm>
+          )}
         </div>
       </Tooltip>
     ),
@@ -884,7 +967,7 @@ export default function DataEntry() {
     },
     ...indicatorColumns,
     {
-      title: '结论', width: 90, align: 'center' as const, fixed: 'right' as const,
+      title: '结论', width: 130, align: 'center' as const, fixed: 'right' as const,
       render: (_: any, r: any) => {
         if (r.sample_point_id === -1) return null;
         const status = getRowStatus(r.sample_point_id);
@@ -899,13 +982,20 @@ export default function DataEntry() {
           tag = <Tag style={{ borderRadius: 6, margin: 0, color: '#c0c0c0' }}>未填报</Tag>;
         }
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'center' }}>
             {tag}
             {isEditable && (
-              <DeleteOutlined
-                style={{ fontSize: 11, color: '#94a3b8', cursor: 'pointer' }}
-                onClick={e => { e.stopPropagation(); handleDeleteRow(r.sample_point_id); }}
-              />
+              <Popconfirm title="清空此行数据？" onConfirm={() => handleClearRow(r.sample_point_id)} okText="清空" cancelText="取消">
+                <Button type="link" size="small" style={{ fontSize: 10, padding: 0, height: 18 }} onClick={e => e.stopPropagation()}>清空</Button>
+              </Popconfirm>
+            )}
+            {isEditable && (
+              <Popconfirm title="删除此采样点？" description="数据和照片将一并删除" onConfirm={() => handleDeleteRow(r.sample_point_id)} okText="删除" cancelText="取消" okType="danger">
+                <DeleteOutlined
+                  style={{ fontSize: 11, color: '#94a3b8', cursor: 'pointer', marginLeft: 2 }}
+                  onClick={e => e.stopPropagation()}
+                />
+              </Popconfirm>
             )}
           </div>
         );
@@ -924,9 +1014,7 @@ export default function DataEntry() {
   };
 
   // ── Stats ──
-  const isDraft = record?.status === 'draft';
-  const isRejected = record?.status === 'rejected';
-  const isEditable = isDraft || isRejected;
+  // (isDraft / isRejected / isEditable defined above columns, reused here)
   // Anyone can review — just enter name and click
   const abnormalItems = details.filter(d => d.is_abnormal);
   const filledCells = details.filter(d => d.value_text && d.value_text.trim()).length;
@@ -984,6 +1072,9 @@ export default function DataEntry() {
                     setAddPointModalOpen(true);
                   });
                 }} style={{ borderRadius: 8 }}>添加点位</Button>
+                <Popconfirm title="清空当前报告所有已填数据？" description="可通过 Ctrl+Z 撤销" onConfirm={handleClearAll} okText="全部清空" cancelText="取消" okType="danger">
+                  <Button icon={<DeleteOutlined />} danger style={{ borderRadius: 8 }}>清空数据</Button>
+                </Popconfirm>
 {/* 拍照识别功能暂时隐藏 */}
                 {/* <Button icon={<CameraOutlined />} onClick={handleOcrRecognize} style={{ borderRadius: 8, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', color: '#fff' }}>拍照识别</Button> */}
                 <Popconfirm title="提交后将无法修改，确认提交？" onConfirm={handleSubmit} okText="确认提交" cancelText="取消">
@@ -1309,34 +1400,6 @@ export default function DataEntry() {
             </div>
           }
         >
-          {/* Legend + Progress bar (collapsible) */}
-          <div style={{
-            marginBottom: 12, padding: '6px 14px', background: '#f8fafc', borderRadius: 8,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-              <Space size="small">
-                <Progress percent={Math.round(filledCells / (totalPoints * indicators.length) * 100)} size="small" style={{ width: 80 }}
-                  strokeColor={abnormalItems.length > 0 ? '#faad14' : '#52c41a'} />
-              </Space>
-              <Button type="link" size="small" onClick={() => setLegendExpanded(!legendExpanded)} style={{ fontSize: 11, padding: 0 }}>
-                {legendExpanded ? '收起图例 ▲' : '图例说明 ▶'}
-              </Button>
-            </div>
-            {legendExpanded && (
-              <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
-                <Space size={4}><CheckCircleOutlined style={{ color: '#52c41a', fontSize: 12 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>已填完</Typography.Text></Space>
-                <Space size={4}><span style={{ color: '#faad14', fontSize: 12 }}>◐</span><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>部分填写</Typography.Text></Space>
-                <Space size={4}><span style={{ color: '#d9d9d9', fontSize: 12 }}>○</span><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>未填</Typography.Text></Space>
-                <Space size={4}><CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 12 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>超标</Typography.Text></Space>
-                <Divider type="vertical" />
-                <Space size={4}><div style={{ width: 12, height: 12, background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 2 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>合格</Typography.Text></Space>
-                <Space size={4}><div style={{ width: 12, height: 12, background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 2 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>超标</Typography.Text></Space>
-                <Divider type="vertical" />
-                <Space size={4}><div style={{ width: 12, height: 12, background: '#e6f7ff', border: '1px solid #91d5ff', borderRadius: 2 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>刚粘贴</Typography.Text></Space>
-              </div>
-            )}
-          </div>
-
           {/* Area tabs (only in matrix mode) */}
           {viewMode === 'matrix' && areas.length > 1 && (
             <Tabs
@@ -1494,11 +1557,13 @@ export default function DataEntry() {
           {/* Bottom status bar */}
           <div style={{
             marginTop: 12, padding: '8px 14px', background: '#f8fafc', borderRadius: 8,
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6,
           }}>
-            <Space size="large">
+            <Space size="small" wrap>
+              <Progress percent={Math.round(filledCells / (totalPoints * indicators.length) * 100)} size="small" style={{ width: 80 }}
+                strokeColor={abnormalItems.length > 0 ? '#faad14' : '#52c41a'} />
               <Typography.Text
-                style={{ fontSize: 12, color: filledPoints < totalPoints ? '#0891b2' : '#64748b', cursor: filledPoints < totalPoints ? 'pointer' : 'default', textDecoration: filledPoints < totalPoints ? 'underline' : 'none' }}
+                style={{ fontSize: 12, color: filledPoints < totalPoints ? '#0891b2' : '#64748b', cursor: filledPoints < totalPoints ? 'pointer' : 'default', textDecoration: filledPoints < totalPoints ? 'underline' : 'none', whiteSpace: 'nowrap' }}
                 onClick={() => {
                   if (filledPoints >= totalPoints) return;
                   if (viewMode === 'single') {
@@ -1510,14 +1575,17 @@ export default function DataEntry() {
                   }
                 }}
               >
-                <CheckCircleOutlined style={{ color: filledPoints >= totalPoints ? '#52c41a' : '#0891b2' }} /> 已填报 {filledPoints}/{totalPoints} 采样点
+                <CheckCircleOutlined style={{ color: filledPoints >= totalPoints ? '#52c41a' : '#0891b2' }} /> {filledPoints}/{totalPoints} 采样点
                 {filledPoints < totalPoints && ' → 跳转未填报'}
               </Typography.Text>
               {abnormalPoints > 0 && (
-                <Typography.Text style={{ fontSize: 12, color: '#ff4d4f' }}>
-                  <ExclamationCircleOutlined /> {abnormalPoints} 个点位超标
+                <Typography.Text style={{ fontSize: 12, color: '#ff4d4f', whiteSpace: 'nowrap' }}>
+                  <ExclamationCircleOutlined /> {abnormalPoints} 个超标
                 </Typography.Text>
               )}
+              <Button type="link" size="small" onClick={() => setLegendExpanded(!legendExpanded)} style={{ fontSize: 11, padding: 0 }}>
+                {legendExpanded ? '收起图例 ▲' : '图例 ▶'}
+              </Button>
             </Space>
             <Space size="middle">
               {isEditable && record && (
@@ -1538,6 +1606,20 @@ export default function DataEntry() {
               )}
             </Space>
           </div>
+          {/* Legend expand */}
+          {legendExpanded && (
+            <div style={{ marginTop: 4, padding: '6px 14px', background: '#f8fafc', borderRadius: 8, display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
+              <Space size={4}><CheckCircleOutlined style={{ color: '#52c41a', fontSize: 12 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>已填完</Typography.Text></Space>
+              <Space size={4}><span style={{ color: '#faad14', fontSize: 12 }}>◐</span><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>部分填写</Typography.Text></Space>
+              <Space size={4}><span style={{ color: '#d9d9d9', fontSize: 12 }}>○</span><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>未填</Typography.Text></Space>
+              <Space size={4}><CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 12 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>超标</Typography.Text></Space>
+              <Divider type="vertical" />
+              <Space size={4}><div style={{ width: 12, height: 12, background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 2 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>合格</Typography.Text></Space>
+              <Space size={4}><div style={{ width: 12, height: 12, background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 2 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>超标</Typography.Text></Space>
+              <Divider type="vertical" />
+              <Space size={4}><div style={{ width: 12, height: 12, background: '#e6f7ff', border: '1px solid #91d5ff', borderRadius: 2 }} /><Typography.Text style={{ fontSize: 12, color: '#64748b' }}>刚粘贴</Typography.Text></Space>
+            </div>
+          )}
 
           {/* Conclusion — always visible when record exists */}
           {record && (
