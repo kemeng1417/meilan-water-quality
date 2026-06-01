@@ -67,7 +67,7 @@ export default function DataEntry() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [tester, setTester] = useState(user.display_name || localStorage.getItem(LS_LAST_TESTER) || '');
-  const [testDate, setTestDate] = useState<dayjs.Dayjs>(dayjs());
+  const [testDate, setTestDate] = useState<dayjs.Dayjs>(dayjs().subtract(1, 'day'));
   const [reportDate, setReportDate] = useState<dayjs.Dayjs>(dayjs());
   const [conclusion, setConclusion] = useState('');
   const [conclusionEdited, setConclusionEdited] = useState(false);

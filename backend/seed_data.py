@@ -166,6 +166,15 @@ def _seed_users(db: Session):
     users = [
         {"username": "admin", "password": "admin123", "display_name": "主管", "role": "admin"},
         {"username": "huayan", "password": "123456", "display_name": "化验员", "role": "tester"},
+        {"username": "zhengqingshan", "password": "123456", "display_name": "郑清山", "role": "tester"},
+        {"username": "kemeng", "password": "123456", "display_name": "柯猛", "role": "tester"},
+        {"username": "lizhenhui", "password": "123456", "display_name": "黎振辉", "role": "tester"},
+        {"username": "xingzhouyu", "password": "123456", "display_name": "邢周玉", "role": "tester"},
+        {"username": "wangheshan", "password": "123456", "display_name": "王和善", "role": "tester"},
+        {"username": "chenying", "password": "123456", "display_name": "陈颖", "role": "tester"},
+        {"username": "liuyi", "password": "123456", "display_name": "刘毅", "role": "tester"},
+        {"username": "zhangwei", "password": "123456", "display_name": "张伟", "role": "tester"},
+        {"username": "bairui", "password": "123456", "display_name": "白瑞", "role": "tester"},
     ]
     for u in users:
         db.add(User(
