@@ -1066,7 +1066,6 @@ export default function DataEntry() {
                 <Button icon={<SaveOutlined />} loading={saving} onClick={handleSave} style={{ borderRadius: 8 }}>保存</Button>
                 <Button icon={<SwapOutlined />} onClick={() => setPasteModalOpen(true)} style={{ borderRadius: 8 }}>批量粘贴</Button>
                 <Button icon={<PlusOutlined />} onClick={() => {
-                  // Load all active points for this water type (not just current points)
                   getSamplePoints(record?.water_type_id || selectedWt, null).then(res => {
                     setAllActivePoints(res.data.filter((p: any) => !allPoints.some(ap => ap.sample_point_id === p.id)));
                     setAddPointModalOpen(true);
@@ -1075,20 +1074,20 @@ export default function DataEntry() {
                 <Popconfirm title="清空当前报告所有已填数据？" description="可通过 Ctrl+Z 撤销" onConfirm={handleClearAll} okText="全部清空" cancelText="取消" okType="danger">
                   <Button icon={<DeleteOutlined />} danger style={{ borderRadius: 8 }}>清空数据</Button>
                 </Popconfirm>
-{/* 拍照识别功能暂时隐藏 */}
-                {/* <Button icon={<CameraOutlined />} onClick={handleOcrRecognize} style={{ borderRadius: 8, background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none', color: '#fff' }}>拍照识别</Button> */}
-                <Popconfirm title="提交后将无法修改，确认提交？" onConfirm={handleSubmit} okText="确认提交" cancelText="取消">
-                  <Button type="primary" icon={<SendOutlined />} style={{ borderRadius: 8, background: 'linear-gradient(135deg, #0e7490, #0891b2)', border: 'none' }}>提交审核</Button>
-                </Popconfirm>
+                {/* 打回 → 重新提交；草稿 → 提交审核 */}
+                {record?.status === 'rejected' ? (
+                  <Popconfirm title="重新提交审核？" onConfirm={handleSubmit} okText="确认" cancelText="取消">
+                    <Button type="primary" icon={<SendOutlined />} style={{ borderRadius: 8 }}>重新提交</Button>
+                  </Popconfirm>
+                ) : (
+                  <Popconfirm title="提交后将无法修改，确认提交？" onConfirm={handleSubmit} okText="确认提交" cancelText="取消">
+                    <Button type="primary" icon={<SendOutlined />} style={{ borderRadius: 8, background: 'linear-gradient(135deg, #0e7490, #0891b2)', border: 'none' }}>提交审核</Button>
+                  </Popconfirm>
+                )}
               </>
             )}
-            {record?.status === 'rejected' && (
-              <Popconfirm title="重新提交审核？" onConfirm={handleSubmit} okText="确认" cancelText="取消">
-                <Button type="primary" icon={<SendOutlined />} style={{ borderRadius: 8 }}>重新提交</Button>
-              </Popconfirm>
-            )}
-            {/* Review — anyone can review submitted records */}
-            {(record?.status === 'submitted' || record?.status === 'rejected') && (
+            {/* Review — only for submitted records */}
+            {record?.status === 'submitted' && (
               <>
                 <Divider type="vertical" />
                 <Input placeholder="审核人姓名" value={reviewer} onChange={e => setReviewer(e.target.value)} style={{ width: 120, borderRadius: 8 }} />

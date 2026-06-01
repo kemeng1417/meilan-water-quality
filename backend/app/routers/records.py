@@ -209,11 +209,6 @@ def batch_save_details(record_id: int, items: list[TestDetailUpdate], db: Sessio
     if record.status not in ("draft", "rejected"):
         raise HTTPException(status_code=400, detail="仅草稿或已打回状态可修改")
 
-    # 重新提交打回的记录
-    if record.status == "rejected":
-        record.status = "submitted"
-        record.rejection_reason = None
-
     has_abnormal = False
 
     for item in items:
@@ -255,6 +250,7 @@ def batch_save_details(record_id: int, items: list[TestDetailUpdate], db: Sessio
                 ))
 
     record.is_abnormal = has_abnormal
+    db.flush()  # 确保 is_abnormal 等修改已同步到数据库再查询
 
     # ── 始终自动生成最新结论（前端通过 conclusionEdited 控制是否采纳）──
     water_type = db.query(WaterType).filter(WaterType.id == record.water_type_id).first()
