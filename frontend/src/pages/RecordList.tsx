@@ -116,16 +116,15 @@ export default function RecordList() {
 
   // ── Batch actions ──
   const handleBatchDelete = async () => {
-    const eligible = data.items.filter((r: any) =>
-      selectedRowKeys.includes(r.id) && r.status !== 'reviewed'
-    );
-    if (eligible.length === 0) {
-      message.warning('所选记录均为已审核状态，不可删除');
-      return;
-    }
+    if (selectedRowKeys.length === 0) return;
     try {
-      await batchDeleteRecords(eligible.map((r: any) => r.id));
-      message.success(`已删除 ${eligible.length} 条记录`);
+      const res = await batchDeleteRecords(selectedRowKeys as number[]);
+      const data = res.data;
+      if (data.skipped?.length) {
+        message.warning(`已删除 ${data.deleted} 条，跳过 ${data.skipped.length} 条已审核记录（${data.skipped.join('、')}）`);
+      } else {
+        message.success(`已删除 ${data.deleted} 条记录`);
+      }
       setSelectedRowKeys([]);
       setFilters(f => ({ ...f, page: 1 }));
     } catch { message.error('批量删除失败'); }

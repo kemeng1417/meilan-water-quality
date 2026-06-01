@@ -343,8 +343,9 @@ def delete_record(record_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="记录不存在")
     if record.status == "reviewed":
         raise HTTPException(status_code=400, detail="已审核记录不可删除")
-    db.query(TestDetail).filter(TestDetail.record_id == record_id).delete()
     db.query(AlertRecord).filter(AlertRecord.record_id == record_id).delete()
+    db.query(Photo).filter(Photo.record_id == record_id).delete()
+    db.query(TestDetail).filter(TestDetail.record_id == record_id).delete()
     db.delete(record)
     db.commit()
     return {"success": True}
@@ -352,16 +353,21 @@ def delete_record(record_id: int, db: Session = Depends(get_db)):
 
 @router.post("/batch-delete")
 def batch_delete_records(ids: list[int], db: Session = Depends(get_db)):
-    """批量删除草稿/已打回状态的记录"""
+    """批量删除记录，跳过已审核的，只删除草稿/已打回"""
     records = db.query(TestRecord).filter(TestRecord.id.in_(ids)).all()
+    skipped = []
+    deleted = 0
     for r in records:
         if r.status == "reviewed":
-            raise HTTPException(status_code=400, detail=f"记录 {r.record_no} 已审核，不可删除")
-        db.query(TestDetail).filter(TestDetail.record_id == r.id).delete()
+            skipped.append(r.record_no)
+            continue
         db.query(AlertRecord).filter(AlertRecord.record_id == r.id).delete()
+        db.query(Photo).filter(Photo.record_id == r.id).delete()
+        db.query(TestDetail).filter(TestDetail.record_id == r.id).delete()
         db.delete(r)
+        deleted += 1
     db.commit()
-    return {"success": True, "deleted": len(records)}
+    return {"success": True, "deleted": deleted, "skipped": skipped}
 
 
 @router.delete("/{record_id}/points/{sample_point_id}")
