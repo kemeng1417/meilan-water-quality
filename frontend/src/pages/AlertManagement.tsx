@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Table, Card, Select, Tag, Button, Space, Typography, Modal, Input, message,
-  Empty, Row, Col, Statistic, DatePicker, Badge, Tooltip, Popconfirm,
+  Empty, Row, Col, Statistic, DatePicker, Badge, Tooltip, Popconfirm, Segmented,
 } from 'antd';
 import {
   CheckOutlined, WarningOutlined, EnvironmentOutlined, EditOutlined,
@@ -9,7 +9,7 @@ import {
 } from '@ant-design/icons';
 import {
   getAlerts, updateAlert, batchResolveAlerts, getAlertSummary, getAlertFilterOptions,
-  getAlertTemplates, exportAlerts, getUnresolvedAlertCount,
+  getAlertTemplates, exportAlerts, getUnresolvedAlertCount, getAlertWeeklyTrend,
 } from '../api/endpoints';
 import client from '../api/client';
 import dayjs from 'dayjs';
@@ -22,17 +22,24 @@ const SEVERITY_MAP: Record<string, { color: string; label: string }> = {
   severe: { color: 'red', label: '严重' },
 };
 
+const LS_FILTERS = 'alert_filters';
+
 export default function AlertManagement() {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const currentUserName = user.display_name || '';
 
+  // Filter persistence
+  const savedFilters = (() => { try { return JSON.parse(localStorage.getItem(LS_FILTERS) || '{}'); } catch { return {}; } })();
+
   const [data, setData] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
-  const [filters, setFilters] = useState<Record<string, unknown>>({ page: 1, page_size: 20 });
+  const [filters, setFilters] = useState<Record<string, unknown>>({ page: 1, page_size: 20, ...savedFilters });
   const [summary, setSummary] = useState<any>({});
   const [filterOpts, setFilterOpts] = useState<any>({});
   const [templates, setTemplates] = useState<any[]>([]);
+  const [weeklyTrend, setWeeklyTrend] = useState<{ date: string; count: number }[]>([]);
+  const [dateQuick, setDateQuick] = useState<string>('');
 
   // Resolve modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -66,6 +73,31 @@ export default function AlertManagement() {
     getAlertFilterOptions().then(res => setFilterOpts(res.data));
     getAlertTemplates().then(res => setTemplates(res.data));
     getUnresolvedAlertCount().then(res => setBadgeCount(res.data.unresolved));
+    getAlertWeeklyTrend().then(res => setWeeklyTrend(res.data));
+  };
+
+  // Filter persistence: save to localStorage on change
+  const updateFilters = (fn: (prev: Record<string, unknown>) => Record<string, unknown>) => {
+    setFilters(prev => {
+      const next = fn(prev);
+      const toSave: Record<string, unknown> = {};
+      for (const k of ['status', 'water_type_id', 'indicator_id', 'sample_point_id', 'severity', 'start_date', 'end_date']) {
+        if (next[k] !== undefined && next[k] !== null && next[k] !== '') toSave[k] = next[k];
+      }
+      localStorage.setItem(LS_FILTERS, JSON.stringify(toSave));
+      return next;
+    });
+  };
+
+  // Quick date filter
+  const handleDateQuick = (val: string) => {
+    setDateQuick(val || '');
+    const today = dayjs();
+    let start = '';
+    if (val === 'today') start = today.format('YYYY-MM-DD');
+    else if (val === 'week') start = today.subtract(7, 'day').format('YYYY-MM-DD');
+    else if (val === 'month') start = today.startOf('month').format('YYYY-MM-DD');
+    updateFilters(f => ({ ...f, page: 1, start_date: start || undefined, end_date: val ? today.format('YYYY-MM-DD') : undefined }));
   };
 
   useEffect(() => { fetchData(); fetchSummary(); }, [filters]);
@@ -138,7 +170,24 @@ export default function AlertManagement() {
       title: '采样点', dataIndex: 'sample_point_name', width: 150, ellipsis: true,
       render: (v: string) => <span><EnvironmentOutlined style={{ color: '#94a3b8', marginRight: 4 }} />{v}</span>,
     },
-    { title: '指标', dataIndex: 'indicator_name', width: 80 },
+    { title: '指标', dataIndex: 'indicator_name', width: 80,
+      render: (v: string, r: any) => {
+        // Check repeat: same point+indicator appears multiple times in result set
+        const repeatCount = data.items.filter((x: any) =>
+          x.sample_point_id === r.sample_point_id && x.indicator_id === r.indicator_id
+        ).length;
+        return (
+          <span>
+            {v}
+            {repeatCount > 1 && (
+              <Tooltip title={`此点位+指标已重复出现 ${repeatCount} 次`}>
+                <Tag color="red" style={{ fontSize: 10, padding: '0 4px', lineHeight: '16px', marginLeft: 4, borderRadius: 8 }}>反复</Tag>
+              </Tooltip>
+            )}
+          </span>
+        );
+      },
+    },
     {
       title: '检测值', dataIndex: 'value_text', width: 120,
       render: (v: string, r: any) => {
@@ -159,12 +208,16 @@ export default function AlertManagement() {
       ),
     },
     {
-      title: '状态', dataIndex: 'resolved', width: 80,
-      render: (v: boolean, r: any) => v
-        ? <Tooltip title={r.resolved_by ? `处理人: ${r.resolved_by}` : ''}>
+      title: '状态', dataIndex: 'resolved', width: 95,
+      render: (v: boolean, r: any) => {
+        if (r.verified) return <Tag color="processing" style={{ borderRadius: 6 }}>已验证</Tag>;
+        if (v) return (
+          <Tooltip title={r.resolved_by ? `处理人: ${r.resolved_by}` : ''}>
             <Tag color="success" style={{ borderRadius: 6 }}>已处理</Tag>
           </Tooltip>
-        : <Tag color="error" style={{ borderRadius: 6 }}><WarningOutlined /></Tag>,
+        );
+        return <Tag color="error" style={{ borderRadius: 6 }}><WarningOutlined /></Tag>;
+      },
     },
     {
       title: '整改措施', dataIndex: 'corrective_action', width: 130,
@@ -244,6 +297,43 @@ export default function AlertManagement() {
         ))}
       </Row>
 
+      {/* Quick Date + Trend */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={12}>
+          <Card size="small" style={{ borderRadius: 10 }} bodyStyle={{ padding: '10px 16px' }}>
+            <Space>
+              <Typography.Text type="secondary" style={{ fontSize: 13 }}>快捷：</Typography.Text>
+              <Segmented size="small" value={dateQuick} onChange={v => handleDateQuick(v as string)}
+                options={[
+                  { label: '全部', value: '' },
+                  { label: '今天', value: 'today' },
+                  { label: '近7天', value: 'week' },
+                  { label: '本月', value: 'month' },
+                ]} />
+            </Space>
+          </Card>
+        </Col>
+        <Col span={12}>
+          <Card size="small" style={{ borderRadius: 10 }} bodyStyle={{ padding: '6px 16px 2px' }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>近7天新增告警</Typography.Text>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 40, marginTop: 4 }}>
+              {weeklyTrend.map((d, i) => {
+                const max = Math.max(...weeklyTrend.map(x => x.count), 1);
+                const h = Math.max((d.count / max) * 36, d.count > 0 ? 4 : 0);
+                return (
+                  <Tooltip key={i} title={`${d.date}: ${d.count}条`}>
+                    <div style={{ flex: 1, textAlign: 'center' }}>
+                      <div style={{ height: h, background: d.count > 0 ? '#ff4d4f' : '#f0f0f0', borderRadius: '3px 3px 0 0', transition: 'height 0.3s' }} />
+                      <div style={{ fontSize: 10, color: '#999', marginTop: 2 }}>{dayjs(d.date).format('MM/DD')}</div>
+                    </div>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
       {/* Top issues */}
       {summary.top_indicators?.length > 0 && (
         <Card size="small" style={{ marginBottom: 16, borderRadius: 10 }} bodyStyle={{ padding: '10px 20px' }}>
@@ -268,32 +358,33 @@ export default function AlertManagement() {
       <Card size="small" style={{ marginBottom: 16, borderRadius: 10 }} bodyStyle={{ padding: '12px 20px' }}>
         <Space wrap>
           <Select placeholder="状态" allowClear style={{ width: 110 }} value={filters.status}
-            onChange={v => setFilters(f => ({ ...f, status: v, page: 1 }))}
+            onChange={v => updateFilters(f => ({ ...f, status: v, page: 1 }))}
             options={[{ label: '待处理', value: 'open' }, { label: '已处理', value: 'resolved' }]} />
           <Select placeholder="水样类型" allowClear style={{ width: 140 }} value={filters.water_type_id}
-            onChange={v => setFilters(f => ({ ...f, water_type_id: v, page: 1 }))}
+            onChange={v => updateFilters(f => ({ ...f, water_type_id: v, page: 1 }))}
             options={(filterOpts.water_types || []).map((w: any) => ({ label: w.name, value: w.id }))} />
           <Select placeholder="指标" allowClear showSearch style={{ width: 150 }} value={filters.indicator_id}
-            onChange={v => setFilters(f => ({ ...f, indicator_id: v, page: 1 }))}
+            onChange={v => updateFilters(f => ({ ...f, indicator_id: v, page: 1 }))}
             options={(filterOpts.indicators || []).map((i: any) => ({ label: i.name, value: i.id }))} />
           <Select placeholder="采样点" allowClear showSearch style={{ width: 180 }} value={filters.sample_point_id}
-            onChange={v => setFilters(f => ({ ...f, sample_point_id: v, page: 1 }))}
+            onChange={v => updateFilters(f => ({ ...f, sample_point_id: v, page: 1 }))}
             options={(filterOpts.sample_points || []).map((p: any) => ({ label: `${p.code} ${p.name}`, value: p.id }))} />
           <Select placeholder="严重程度" allowClear style={{ width: 120 }} value={filters.severity}
-            onChange={v => setFilters(f => ({ ...f, severity: v, page: 1 }))}
+            onChange={v => updateFilters(f => ({ ...f, severity: v, page: 1 }))}
             options={(filterOpts.severities || []).map((s: any) => ({ label: s.label, value: s.value }))} />
           <RangePicker
             placeholder={['开始日期', '结束日期']}
             style={{ borderRadius: 6 }}
             onChange={(dates) => {
-              setFilters(f => ({
+              setDateQuick('');
+              updateFilters(f => ({
                 ...f, page: 1,
                 start_date: dates?.[0]?.format('YYYY-MM-DD'),
                 end_date: dates?.[1]?.format('YYYY-MM-DD'),
               }));
             }}
           />
-          <Button icon={<ClearOutlined />} onClick={() => setFilters({ page: 1, page_size: 20 })}>重置</Button>
+          <Button icon={<ClearOutlined />} onClick={() => { setDateQuick(''); localStorage.removeItem(LS_FILTERS); setFilters({ page: 1, page_size: 20 }); }}>重置</Button>
         </Space>
       </Card>
 
@@ -326,7 +417,7 @@ export default function AlertManagement() {
             current: filters.page as number, pageSize: filters.page_size as number, total: data.total,
             showTotal: t => <Typography.Text type="secondary">共 {t} 条异常记录</Typography.Text>,
             showSizeChanger: true,
-            onChange: (p, ps) => setFilters(f => ({ ...f, page: p, page_size: ps })),
+            onChange: (p, ps) => updateFilters(f => ({ ...f, page: p, page_size: ps })),
           }}
           locale={{ emptyText: <Empty description="暂无异常记录" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
         />
@@ -438,7 +529,8 @@ export default function AlertManagement() {
               <Tag color={SEVERITY_MAP[currentAlert.severity]?.color || 'default'}>
                 {SEVERITY_MAP[currentAlert.severity]?.label || currentAlert.severity}
               </Tag>
-              <Tag color={currentAlert.resolved ? 'success' : 'error'} style={{ marginLeft: 8 }}>
+              {currentAlert.verified && <Tag color="processing" style={{ marginLeft: 8 }}>已验证</Tag>}
+              <Tag color={currentAlert.resolved ? 'success' : 'error'} style={{ marginLeft: currentAlert.verified ? 4 : 8 }}>
                 {currentAlert.resolved ? '已处理' : '待处理'}
               </Tag>
             </div>

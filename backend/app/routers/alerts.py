@@ -74,6 +74,7 @@ def _enrich_alerts(db: Session, alerts: list[AlertRecord]) -> list[dict]:
             "resolved": a.resolved,
             "resolved_at": str(a.resolved_at) if a.resolved_at else None,
             "resolved_by": a.resolved_by or "",
+            "verified": a.verified or False,
             "created_at": str(a.created_at),
         })
     return items
@@ -300,6 +301,21 @@ def export_alerts(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=alerts_export.xlsx"},
     )
+
+
+@router.get("/weekly-trend")
+def weekly_trend(db: Session = Depends(get_db)):
+    """近7天每日新增告警数"""
+    from datetime import timedelta
+    today = date.today()
+    trend = []
+    for i in range(6, -1, -1):
+        d = today - timedelta(days=i)
+        cnt = db.query(AlertRecord).filter(
+            sqlfunc.date(AlertRecord.created_at) == d
+        ).count()
+        trend.append({"date": str(d), "count": cnt})
+    return trend
 
 
 @router.get("/unresolved-count")

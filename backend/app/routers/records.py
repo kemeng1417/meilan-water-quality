@@ -238,6 +238,17 @@ def batch_save_details(record_id: int, items: list[TestDetailUpdate], db: Sessio
         if result["is_abnormal"]:
             has_abnormal = True
 
+        # 自动验证：如果本次检测合格，将同采样点+同指标已处理的告警标记为已验证
+        if result["is_qualified"] and not result["is_abnormal"]:
+            resolved_alerts = db.query(AlertRecord).join(TestDetail).filter(
+                TestDetail.sample_point_id == detail.sample_point_id,
+                TestDetail.indicator_id == detail.indicator_id,
+                AlertRecord.resolved == True,
+                AlertRecord.verified == False,
+            ).all()
+            for ra in resolved_alerts:
+                ra.verified = True
+
     record.is_abnormal = has_abnormal
     db.flush()  # 确保 is_abnormal 等修改已同步到数据库再查询
 

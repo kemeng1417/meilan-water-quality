@@ -14,4 +14,5 @@ class AlertRecord(Base):
     resolved = Column(Boolean, default=False)
     resolved_at = Column(DateTime)
     resolved_by = Column(String(50))
+    verified = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())

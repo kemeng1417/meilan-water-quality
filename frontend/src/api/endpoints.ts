@@ -102,6 +102,8 @@ export const getAlertTemplates = () => client.get('/alerts/templates');
 
 export const getUnresolvedAlertCount = () => client.get('/alerts/unresolved-count');
 
+export const getAlertWeeklyTrend = () => client.get('/alerts/weekly-trend');
+
 export const exportAlerts = (params: Record<string, unknown>) =>
   client.get('/alerts/export', { params, responseType: 'blob' });
 
