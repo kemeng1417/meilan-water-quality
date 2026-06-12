@@ -873,8 +873,8 @@ export default function DataEntry() {
         <div style={{ textAlign: 'center' }}>
           <div style={{ cursor: 'pointer', display: 'inline-block' }}
             onClick={() => handleQuickFillColumn(ind.id, ind.value_type === 'text' ? (ind.name === '肉眼可见物' ? '无' : ind.name === '总大肠菌群' ? '未检出' : ind.name === '臭和味' ? '无异臭、异味' : '') : '合格')}>
-            <div style={{ fontWeight: 600, fontSize: isFullscreen ? 15 : 13 }}>{ind.name}</div>
-            {ind.unit && <div style={{ fontSize: isFullscreen ? 12 : 11, color: '#94a3b8' }}>({ind.unit})</div>}
+            <div style={{ fontWeight: 600, fontSize: isFullscreen ? 16 : 13 }}>{ind.name}</div>
+            {ind.unit && <div style={{ fontSize: isFullscreen ? 13 : 11, color: '#94a3b8' }}>({ind.unit})</div>}
           </div>
           {isEditable && (
             <Popconfirm title={`清空${ind.name}列？`} onConfirm={() => handleClearColumn(ind.id)} okText="清空" cancelText="取消">
@@ -895,7 +895,7 @@ export default function DataEntry() {
       // Standard limit reference row
       if (row.sample_point_id === -1) {
         return (
-          <div style={{ textAlign: 'center', fontSize: isFullscreen ? 13 : 12, color: '#64748b', fontStyle: 'italic', padding: '0 4px' }}>
+          <div style={{ textAlign: 'center', fontSize: isFullscreen ? 14 : 12, color: '#64748b', fontStyle: 'italic', padding: '0 4px' }}>
             {getLimitText(ind.id)}
           </div>
         );
@@ -916,7 +916,7 @@ export default function DataEntry() {
           }}>
             {isFail ? <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 12 }} /> :
              detail?.is_qualified === true ? <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 12 }} /> : null}
-            <span style={{ color: isFail ? '#cf1322' : '#334155', fontWeight: isFail ? 600 : 400, fontSize: isFullscreen ? 16 : 14 }}>
+            <span style={{ color: isFail ? '#cf1322' : '#334155', fontWeight: isFail ? 600 : 400, fontSize: isFullscreen ? 18 : 14 }}>
               {val || '—'}
             </span>
           </div>
@@ -951,10 +951,10 @@ export default function DataEntry() {
           onBlur={() => { isComposingRef.current = false; }}
           {...{ 'data-cell-input': '', 'data-sp-id': String(row.sample_point_id), 'data-ind-id': String(ind.id) } as any}
           style={{
-            textAlign: 'center', borderRadius: 4, height: isFullscreen ? 40 : 36,
+            textAlign: 'center', borderRadius: 4, height: isFullscreen ? (viewMode === 'single' ? 56 : 48) : 36,
             borderColor: validationError ? '#faad14' : isFail ? '#ff4d4f' : detail?.is_qualified === true ? '#b7eb8f' : '#d9d9d9',
             background: justChanged ? '#e6f7ff' : isFail ? '#fff2f0' : detail?.is_qualified === true ? '#f6ffed' : '#fff',
-            fontSize: isFullscreen ? 16 : 14,
+            fontSize: isFullscreen ? (viewMode === 'single' ? 20 : 18) : 14,
             boxShadow: justChanged ? '0 0 0 2px #1890ff' : (validationError ? '0 0 0 2px #faad14' : undefined),
             transition: 'all 0.3s ease',
           }}
@@ -962,7 +962,7 @@ export default function DataEntry() {
         />
       );
     },
-  })), [indicators, limits, limits2, isEditable, isFullscreen, details]);
+  })), [indicators, limits, limits2, isEditable, isFullscreen, viewMode, details]);
 
   const visiblePoints = getVisiblePoints();
   const columns = useMemo(() => [
@@ -1550,8 +1550,8 @@ export default function DataEntry() {
                 : [limitRow, ...visiblePoints.map(p => ({ ...p, key: String(p.sample_point_id) }))]
             }
             pagination={false}
-            scroll={{ x: 350 + indicators.length * 120, y: 'calc(100vh - 480px)' }}
-            size="small"
+            scroll={{ x: 350 + indicators.length * 120, y: isFullscreen ? 'calc(100vh - 240px)' : 'calc(100vh - 480px)' }}
+            size={isFullscreen ? 'middle' : 'small'}
             bordered
             rowClassName={(r: any) => {
               if (r.sample_point_id === -1) return 'limit-reference-row';
@@ -1569,6 +1569,7 @@ export default function DataEntry() {
               }
               return {
                 style: {
+                  height: isFullscreen && viewMode === 'single' ? 72 : undefined,
                   background: getRowStatus(r.sample_point_id) === 'abnormal' ? '#fffbe6'
                     : getRowStatus(r.sample_point_id) === 'empty' ? '#fafafa' : undefined,
                 },
