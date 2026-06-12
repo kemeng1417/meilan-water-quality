@@ -158,6 +158,7 @@ class AlertOut(BaseModel):
 class AlertUpdate(BaseModel):
     corrective_action: Optional[str] = None
     resolved: Optional[bool] = None
+    resolved_by: Optional[str] = None
 
 
 # ── Dashboard ──

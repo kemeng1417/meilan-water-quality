@@ -91,6 +91,20 @@ export const getAlerts = (params: Record<string, unknown>) =>
 export const updateAlert = (id: number, data: Record<string, unknown>) =>
   client.put(`/alerts/${id}`, data);
 
+export const batchResolveAlerts = (ids: number[], correctiveAction?: string, resolvedBy?: string) =>
+  client.post('/alerts/batch-resolve', ids, { params: { corrective_action: correctiveAction || '', resolved_by: resolvedBy || '' } });
+
+export const getAlertSummary = () => client.get('/alerts/summary');
+
+export const getAlertFilterOptions = () => client.get('/alerts/filter-options');
+
+export const getAlertTemplates = () => client.get('/alerts/templates');
+
+export const getUnresolvedAlertCount = () => client.get('/alerts/unresolved-count');
+
+export const exportAlerts = (params: Record<string, unknown>) =>
+  client.get('/alerts/export', { params, responseType: 'blob' });
+
 // Dashboard
 export const getDashboardSummary = () => client.get('/records/dashboard/summary');
 

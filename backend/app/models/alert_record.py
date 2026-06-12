@@ -13,4 +13,5 @@ class AlertRecord(Base):
     corrective_action = Column(Text)
     resolved = Column(Boolean, default=False)
     resolved_at = Column(DateTime)
+    resolved_by = Column(String(50))
     created_at = Column(DateTime, server_default=func.now())

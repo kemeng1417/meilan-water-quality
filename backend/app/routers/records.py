@@ -237,18 +237,6 @@ def batch_save_details(record_id: int, items: list[TestDetailUpdate], db: Sessio
 
         if result["is_abnormal"]:
             has_abnormal = True
-            # 自动创建告警
-            existing_alert = db.query(AlertRecord).filter(
-                AlertRecord.test_detail_id == detail.id,
-                AlertRecord.resolved == False,
-            ).first()
-            if not existing_alert:
-                db.add(AlertRecord(
-                    test_detail_id=detail.id,
-                    record_id=record_id,
-                    alert_type="exceed_limit",
-                    description=result["alert_desc"],
-                ))
 
     record.is_abnormal = has_abnormal
     db.flush()  # 确保 is_abnormal 等修改已同步到数据库再查询
@@ -282,7 +270,7 @@ def batch_save_details(record_id: int, items: list[TestDetailUpdate], db: Sessio
 
 @router.put("/{record_id}/review")
 def review_record(record_id: int, reviewer: str = Query(...), conclusion: str | None = Query(None), db: Session = Depends(get_db)):
-    """审核通过"""
+    """审核通过，并自动为超标项创建告警记录"""
     record = db.query(TestRecord).filter(TestRecord.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="记录不存在")
@@ -293,13 +281,39 @@ def review_record(record_id: int, reviewer: str = Query(...), conclusion: str | 
     record.rejection_reason = None
     if conclusion:
         record.conclusion = conclusion
+
+    # 审核通过后，为所有超标明细创建告警（避免重复）
+    abnormal_details = db.query(TestDetail).filter(
+        TestDetail.record_id == record_id,
+        TestDetail.is_abnormal == True,
+    ).all()
+    for detail in abnormal_details:
+        existing_alert = db.query(AlertRecord).filter(
+            AlertRecord.test_detail_id == detail.id,
+            AlertRecord.resolved == False,
+        ).first()
+        if not existing_alert:
+            # 构建告警描述
+            from app.services.compliance import check_compliance
+            result = check_compliance(
+                db, detail.sample_point_id, detail.indicator_id,
+                detail.value_text, detail.value_num,
+            )
+            db.add(AlertRecord(
+                test_detail_id=detail.id,
+                record_id=record_id,
+                alert_type="exceed_limit",
+                description=result["alert_desc"],
+                resolved=False,
+            ))
+
     db.commit()
     return {"success": True}
 
 
 @router.put("/{record_id}/reject")
 def reject_record(record_id: int, reviewer: str = Query(...), reason: str = Query(...), db: Session = Depends(get_db)):
-    """打回记录（审核不通过）"""
+    """打回记录（审核不通过），同时清除该记录已生成的告警"""
     record = db.query(TestRecord).filter(TestRecord.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="记录不存在")
@@ -308,6 +322,11 @@ def reject_record(record_id: int, reviewer: str = Query(...), reason: str = Quer
     record.status = "rejected"
     record.reviewer = reviewer
     record.rejection_reason = reason
+    # 打回时清除该记录所有未解决的告警（修正数据后重新审核时会重新生成）
+    db.query(AlertRecord).filter(
+        AlertRecord.record_id == record_id,
+        AlertRecord.resolved == False,
+    ).delete()
     db.commit()
     return {"success": True}
 
