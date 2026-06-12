@@ -297,43 +297,6 @@ export default function AlertManagement() {
         ))}
       </Row>
 
-      {/* Quick Date + Trend */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={12}>
-          <Card size="small" style={{ borderRadius: 10 }} bodyStyle={{ padding: '10px 16px' }}>
-            <Space>
-              <Typography.Text type="secondary" style={{ fontSize: 13 }}>快捷：</Typography.Text>
-              <Segmented size="small" value={dateQuick} onChange={v => handleDateQuick(v as string)}
-                options={[
-                  { label: '全部', value: '' },
-                  { label: '今天', value: 'today' },
-                  { label: '近7天', value: 'week' },
-                  { label: '本月', value: 'month' },
-                ]} />
-            </Space>
-          </Card>
-        </Col>
-        <Col span={12}>
-          <Card size="small" style={{ borderRadius: 10 }} bodyStyle={{ padding: '6px 16px 2px' }}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>近7天新增告警</Typography.Text>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 40, marginTop: 4 }}>
-              {weeklyTrend.map((d, i) => {
-                const max = Math.max(...weeklyTrend.map(x => x.count), 1);
-                const h = Math.max((d.count / max) * 36, d.count > 0 ? 4 : 0);
-                return (
-                  <Tooltip key={i} title={`${d.date}: ${d.count}条`}>
-                    <div style={{ flex: 1, textAlign: 'center' }}>
-                      <div style={{ height: h, background: d.count > 0 ? '#ff4d4f' : '#f0f0f0', borderRadius: '3px 3px 0 0', transition: 'height 0.3s' }} />
-                      <div style={{ fontSize: 10, color: '#999', marginTop: 2 }}>{dayjs(d.date).format('MM/DD')}</div>
-                    </div>
-                  </Tooltip>
-                );
-              })}
-            </div>
-          </Card>
-        </Col>
-      </Row>
-
       {/* Top issues */}
       {summary.top_indicators?.length > 0 && (
         <Card size="small" style={{ marginBottom: 16, borderRadius: 10 }} bodyStyle={{ padding: '10px 20px' }}>
@@ -353,6 +316,61 @@ export default function AlertManagement() {
           </Space>
         </Card>
       )}
+
+      {/* Quick Date + Trend Row */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={14}>
+          <Card size="small" style={{ borderRadius: 10, background: '#fafafa' }} bodyStyle={{ padding: '8px 16px' }}>
+            <Space align="center">
+              <Typography.Text type="secondary" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>快捷日期</Typography.Text>
+              <Segmented size="small" value={dateQuick} onChange={v => handleDateQuick(v as string)}
+                options={[
+                  { label: '全部', value: '' },
+                  { label: '今天', value: 'today' },
+                  { label: '近7天', value: 'week' },
+                  { label: '本月', value: 'month' },
+                ]} />
+            </Space>
+          </Card>
+        </Col>
+        <Col span={10}>
+          <Card size="small" style={{ borderRadius: 10, background: '#fff' }} bodyStyle={{ padding: '6px 12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>近7天趋势</Typography.Text>
+              <Typography.Text style={{ fontSize: 11, color: '#1677ff' }}>
+                {weeklyTrend.reduce((s: number, d: any) => s + d.count, 0)} 条
+              </Typography.Text>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 36 }}>
+              {weeklyTrend.map((d, i) => {
+                const max = Math.max(...weeklyTrend.map((x: any) => x.count), 1);
+                const pct = (d.count / max) * 100;
+                return (
+                  <Tooltip key={i} title={`${d.date}: ${d.count} 条`}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: d.count > 0 ? '#ff4d4f' : '#bbb', fontWeight: d.count > 0 ? 600 : 400, lineHeight: '14px' }}>
+                        {d.count || ''}
+                      </span>
+                      <div style={{
+                        width: '100%', maxWidth: 28,
+                        height: Math.max(pct * 0.2, d.count > 0 ? 4 : 2),
+                        minHeight: d.count > 0 ? 4 : 2,
+                        borderRadius: '2px 2px 0 0',
+                        background: d.count > 0
+                          ? `linear-gradient(180deg, #ff4d4f 0%, #ff7875 100%)`
+                          : '#eee',
+                      }} />
+                      <span style={{ fontSize: 10, color: '#999', marginTop: 1, lineHeight: '12px' }}>
+                        {dayjs(d.date).format('D')}
+                      </span>
+                    </div>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </Card>
+        </Col>
+      </Row>
 
       {/* Filters */}
       <Card size="small" style={{ marginBottom: 16, borderRadius: 10 }} bodyStyle={{ padding: '12px 20px' }}>
