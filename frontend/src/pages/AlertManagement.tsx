@@ -320,7 +320,8 @@ export default function AlertManagement() {
       {/* Quick Date + Trend Row */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={14}>
-          <Card size="small" style={{ borderRadius: 10, background: '#fafafa' }} bodyStyle={{ padding: '8px 16px' }}>
+          <Card size="small" style={{ borderRadius: 10, background: '#fafafa', height: '100%' }}
+            bodyStyle={{ padding: '10px 16px', display: 'flex', alignItems: 'center', height: '100%' }}>
             <Space align="center">
               <Typography.Text type="secondary" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>快捷日期</Typography.Text>
               <Segmented size="small" value={dateQuick} onChange={v => handleDateQuick(v as string)}
@@ -334,33 +335,31 @@ export default function AlertManagement() {
           </Card>
         </Col>
         <Col span={10}>
-          <Card size="small" style={{ borderRadius: 10, background: '#fff' }} bodyStyle={{ padding: '6px 12px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 }}>
+          <Card size="small" style={{ borderRadius: 10 }} bodyStyle={{ padding: '6px 12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>近7天趋势</Typography.Text>
-              <Typography.Text style={{ fontSize: 11, color: '#1677ff' }}>
-                {weeklyTrend.reduce((s: number, d: any) => s + d.count, 0)} 条
+              <Typography.Text style={{ fontSize: 11, color: '#1677ff', fontWeight: 500 }}>
+                共 {weeklyTrend.reduce((s: number, d: any) => s + d.count, 0)} 条
               </Typography.Text>
             </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 36 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 30, marginTop: 4 }}>
               {weeklyTrend.map((d, i) => {
                 const max = Math.max(...weeklyTrend.map((x: any) => x.count), 1);
                 const pct = (d.count / max) * 100;
                 return (
                   <Tooltip key={i} title={`${d.date}: ${d.count} 条`}>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <span style={{ fontSize: 10, color: d.count > 0 ? '#ff4d4f' : '#bbb', fontWeight: d.count > 0 ? 600 : 400, lineHeight: '14px' }}>
-                        {d.count || ''}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }}>
+                      <span style={{ fontSize: 11, color: d.count > 0 ? '#ff4d4f' : '#bbb', fontWeight: d.count > 0 ? 600 : 400, lineHeight: 1, minHeight: 14 }}>
+                        {d.count > 0 ? d.count : ''}
                       </span>
                       <div style={{
                         width: '100%', maxWidth: 28,
-                        height: Math.max(pct * 0.2, d.count > 0 ? 4 : 2),
-                        minHeight: d.count > 0 ? 4 : 2,
-                        borderRadius: '2px 2px 0 0',
-                        background: d.count > 0
-                          ? `linear-gradient(180deg, #ff4d4f 0%, #ff7875 100%)`
-                          : '#eee',
+                        height: Math.max(pct * 0.22, d.count > 0 ? 3 : 1),
+                        minHeight: d.count > 0 ? 3 : 1,
+                        borderRadius: 2,
+                        background: d.count > 0 ? '#ff7875' : '#eee',
                       }} />
-                      <span style={{ fontSize: 10, color: '#999', marginTop: 1, lineHeight: '12px' }}>
+                      <span style={{ fontSize: 10, color: '#bbb', marginTop: 2, lineHeight: 1 }}>
                         {dayjs(d.date).format('D')}
                       </span>
                     </div>

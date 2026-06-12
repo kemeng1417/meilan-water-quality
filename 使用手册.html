@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<style>
+@page { margin: 2cm; size: A4; }
+body { font-family: "Microsoft YaHei", SimSun, sans-serif; font-size: 14px; line-height: 1.9; color: #334155; max-width: 800px; margin: 0 auto; padding: 20px; }
+h1 { text-align: center; font-size: 24px; border-bottom: 2px solid #0891b2; padding-bottom: 12px; margin-top: 0; }
+h2 { font-size: 18px; color: #0e7490; border-bottom: 1px solid #e8ecf1; padding-bottom: 6px; margin-top: 30px; }
+h3 { font-size: 15px; color: #475569; margin-top: 22px; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+th, td { border: 1px solid #d9d9d9; padding: 7px 10px; text-align: left; }
+th { background: #f0f5fa; font-weight: 600; }
+code { background: #f5f5f5; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+pre { background: #f8fafc; border: 1px solid #e8ecf1; border-radius: 8px; padding: 12px; font-size: 12px; }
+strong { color: #0e7490; }
+ul, ol { margin: 8px 0; padding-left: 24px; }
+hr { border: none; border-top: 1px solid #e8ecf1; margin: 20px 0; }
+p { margin: 8px 0; }
+</style></head><body><h1>美兰机场供水站水质管理系统 — 使用手册</h1>
+<h2>一、系统登录</h2>
+<h3>访问地址</h3>
+<ul>
+<li>本地：<code>http://localhost:8000</code></li>
+<li>云端：<code>http://47.120.66.1:8000</code></li>
+</ul>
+<h3>账号信息</h3>
+<p>由管理员统一分配账号密码，首次登录后建议修改密码。</p>
+<h3>首次登录</h3>
+<ol>
+<li>打开浏览器访问系统地址</li>
+<li>输入用户名和密码，点击「登录」</li>
+<li>建议首次登录后修改密码（联系管理员）</li>
+</ol>
+<hr />
+<h2>二、首页看板</h2>
+<p>登录后进入首页，展示四张统计卡片和趋势图表：</p>
+<table>
+<thead>
+<tr>
+<th>卡片</th>
+<th>说明</th>
+<th>点击</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>今日报告</td>
+<td>当天创建的检测报告数量</td>
+<td>跳转到记录列表</td>
+</tr>
+<tr>
+<td>本月报告</td>
+<td>本月累计报告数</td>
+<td>跳转到记录列表</td>
+</tr>
+<tr>
+<td>待审核</td>
+<td>等待审核的报告数</td>
+<td>跳转到已提交列表</td>
+</tr>
+<tr>
+<td>异常报告</td>
+<td>包含超标项目的报告数</td>
+<td>跳转到异常列表</td>
+</tr>
+</tbody>
+</table>
+<p>下方展示「近 7 天报告趋势图」和「今日填报进度」。</p>
+<hr />
+<h2>三、新建检测报告（核心操作）</h2>
+<h3>步骤</h3>
+<ol>
+<li>点击导航栏「新建报告」</li>
+<li><strong>选择水样类型</strong>：出厂水 / 末梢水 / 直饮水 / 联合报告（出厂+末梢）</li>
+<li><strong>设置日期</strong>：</li>
+<li>化验日期：默认为昨天（这是采样日期）</li>
+<li>报告日期：默认为今天（这是出具报告日期）</li>
+<li>提供「昨天」「今天」快捷按钮</li>
+<li><strong>录入化验员</strong>：系统会记住上次输入</li>
+<li><strong>选择采样点</strong>：勾选需要检测的点位</li>
+<li>按区域分组折叠，可点击展开</li>
+<li>每区域有「全选」「清空」按钮</li>
+<li>支持搜索框过滤点位</li>
+<li>支持「全选」「清空」「反选」</li>
+<li>可保存/加载/删除选择模板</li>
+<li>点击「创建报告」→ 弹出确认框 → 确认后生成报告</li>
+</ol>
+<h3>填报数据</h3>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>填写检测值</td>
+<td>直接点击单元格输入</td>
+</tr>
+<tr>
+<td>Tab 跳格</td>
+<td>Tab 跳到下一个单元格</td>
+</tr>
+<tr>
+<td>Enter 换行</td>
+<td>Enter 跳到下一行同列</td>
+</tr>
+<tr>
+<td>整列填充</td>
+<td>点击列头（如"肉眼可见物"）一键填充预设值</td>
+</tr>
+<tr>
+<td>整列清空</td>
+<td>点击列头右上角 × 图标</td>
+</tr>
+<tr>
+<td>本行清空</td>
+<td>点击行末「清空」按钮</td>
+</tr>
+<tr>
+<td>全部清空</td>
+<td>点击工具栏「清空数据」红色按钮</td>
+</tr>
+<tr>
+<td>批量粘贴</td>
+<td>点击「批量粘贴」，粘贴整张表格数据</td>
+</tr>
+<tr>
+<td>撤销/重做</td>
+<td>Ctrl+Z / Ctrl+Y</td>
+</tr>
+</tbody>
+</table>
+<h3>合规判定</h3>
+<ul>
+<li>填入数据后<strong>即时</strong>显示合格（绿底）或超标（红底）</li>
+<li>结论列显示每行状态：○未填 / ◐部分 / ✓合格 / ✗超标</li>
+</ul>
+<h3>全屏填报</h3>
+<ul>
+<li>点击工具栏全屏图标进入全屏模式</li>
+<li>按 Esc 退出全屏</li>
+</ul>
+<hr />
+<h2>四、保存与提交</h2>
+<h3>保存数据</h3>
+<ul>
+<li>点击「保存」按钮</li>
+<li>系统每 60 秒自动保存一次（底部状态栏有提示）</li>
+<li>底部状态栏显示：未保存（橙色）/ 已保存 14:30（绿色）</li>
+</ul>
+<h3>自动生成结论</h3>
+<ul>
+<li>每次保存自动生成结论：</li>
+<li>全部填完且合格 → "本次检测项目全部合格"</li>
+<li>有未填项 → "已检项目均符合标准，尚有 N 项未填报"</li>
+<li>有超标 → "发现 N 项超标，涉及 N 个采样点……需整改"</li>
+<li>手动编辑结论后，系统不再覆盖</li>
+</ul>
+<h3>提交审核</h3>
+<ol>
+<li>确认数据填报完整、结论正确</li>
+<li>点击「提交审核」按钮</li>
+<li>提交后<strong>不可再修改</strong></li>
+</ol>
+<h3>审核流程</h3>
+<pre><code>化验员填报 → 保存 → 提交审核 → 审核人审核 → 通过
+                                    ↘ 打回 → 化验员修改 → 重新提交
+</code></pre>
+<p>审核人操作：
+1. 在报告页面填写「审核人姓名」
+2. 点击「审核通过」或「打回修改」</p>
+<p>被驳回的报告：
+- 化验员修改后点击「重新提交」
+- 提交前可多次保存</p>
+<hr />
+<h2>五、记录列表</h2>
+<h3>筛选与搜索</h3>
+<ul>
+<li>按水样类型、状态、日期范围、异常标志筛选</li>
+<li>搜索：输入报告编号或化验员姓名</li>
+</ul>
+<h3>批量操作</h3>
+<ol>
+<li>勾选行前的复选框</li>
+<li>点击「批量删除」（已审核记录自动跳过，管理员不受限）</li>
+<li>点击「批量导出」导出为 Excel</li>
+</ol>
+<h3>状态流转</h3>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>颜色</th>
+<th>可操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>草稿</td>
+<td>灰</td>
+<td>编辑、删除、提交审核</td>
+</tr>
+<tr>
+<td>已提交</td>
+<td>蓝</td>
+<td>审核通过、打回</td>
+</tr>
+<tr>
+<td>已审核</td>
+<td>绿</td>
+<td>仅查看（管理员可删除）</td>
+</tr>
+<tr>
+<td>已打回</td>
+<td>橙</td>
+<td>编辑、保存、重新提交</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>六、趋势分析</h2>
+<ol>
+<li>选择水样类型</li>
+<li>选择指标（可多选）</li>
+<li>选择采样点（可多选）</li>
+<li>选择日期范围（提供「今天」「近7天」「近30天」快捷按钮）</li>
+<li>点击「查询」</li>
+</ol>
+<p>图表功能：
+- 折线图/柱状图切换
+- 拖拽缩放（dataZoom 滑块）
+- 异常标记（红色图钉标注超标点）
+- 下方展示数据明细表格</p>
+<hr />
+<h2>七、异常管理</h2>
+<p>系统自动记录所有超标项目，包括：
+- 超标报告编号
+- 超标指标和检测值
+- 标准限值
+- 采样点信息</p>
+<p>可录入整改变措施，标记异常是否已处理。</p>
+<hr />
+<h2>八、采样点管理</h2>
+<ul>
+<li>查看所有采样点列表（按水样类型筛选）</li>
+<li>新增采样点：填写编码、名称、区域、楼层</li>
+<li>编辑/停用/启用采样点</li>
+<li>停用的采样点不出现在新建报告中</li>
+</ul>
+<hr />
+<h2>九、人员管理（仅主管）</h2>
+<ul>
+<li>查看所有用户列表</li>
+<li>添加新用户：设置用户名、显示名、角色（主管/化验员）</li>
+<li>编辑用户信息</li>
+<li>停用/启用用户</li>
+</ul>
+<hr />
+<h2>十、报告导出</h2>
+<p>在报告编辑页面，点击「导出报告」下拉菜单，支持四种格式：</p>
+<table>
+<thead>
+<tr>
+<th>格式</th>
+<th>说明</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Word (.docx)</td>
+<td>A4 横向，宋体小四，含照片</td>
+<td>打印存档</td>
+</tr>
+<tr>
+<td>Excel (.xlsx)</td>
+<td>冻结表头，绿/红标记</td>
+<td>数据分析</td>
+</tr>
+<tr>
+<td>HTML</td>
+<td>自包含图片，可打印为 PDF</td>
+<td>在线查看</td>
+</tr>
+<tr>
+<td>PDF (.pdf)</td>
+<td>格式固定</td>
+<td>正式分发</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>十一、常见问题</h2>
+<p><strong>Q: 为什么选完采样点显示 3/2？</strong>
+A: 浏览器缓存了旧数据。按 F12 → 控制台 → 输入 <code>localStorage.clear(); location.reload()</code> 回车。</p>
+<p><strong>Q: 提交审核后还能改吗？</strong>
+A: 不能。如需修改，请审核人「打回」后重新编辑提交。</p>
+<p><strong>Q: 已审核的报告能删除吗？</strong>
+A: 普通化验员不能，需要主管（admin 账号）操作。</p>
+<p><strong>Q: 自动保存的数据在哪里？</strong>
+A: 自动保存将数据写入数据库，60 秒自动触发一次。底部状态栏显示「已保存 HH:mm:ss」。</p>
+<p><strong>Q: 填错了怎么快速清空？</strong>
+A: 列头 × 清空整列 / 行末「清空」清本行 / 工具栏「清空数据」全部清空，误操作可用 Ctrl+Z 撤销。</p>
+<p><strong>Q: 页面卡住无法输入？</strong>
+A: 刷新页面（F5），未保存的数据会自动恢复。</p>
+<hr />
+<h2>十二、键盘快捷键</h2>
+<table>
+<thead>
+<tr>
+<th>快捷键</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tab</td>
+<td>跳下一格</td>
+</tr>
+<tr>
+<td>Shift+Tab</td>
+<td>跳上一格</td>
+</tr>
+<tr>
+<td>Enter</td>
+<td>跳到下一行同列</td>
+</tr>
+<tr>
+<td>Ctrl+Z</td>
+<td>撤销</td>
+</tr>
+<tr>
+<td>Ctrl+Y</td>
+<td>重做</td>
+</tr>
+<tr>
+<td>Esc</td>
+<td>退出全屏模式</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>十三、数据备份</h2>
+<p>数据库文件位于 <code>backend/data/water_quality.db</code>，定期复制此文件即可完成备份。建议每日备份一次。</p>
+<hr />
+<blockquote>
+<p>如有问题请联系系统管理员：主管（admin 账号登录）</p>
+</blockquote></body></html>
